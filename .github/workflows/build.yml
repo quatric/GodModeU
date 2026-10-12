@@ -30,7 +30,6 @@ jobs:
             sleep $((i * 10))
           done
           echo "pkg.devkitpro.org unavailable, building wut from source"
-          dkp-pacman -v >/dev/null 2>&1 || true
           apt-get update -qq
           apt-get install -y -qq git cmake build-essential zlib1g-dev >/dev/null
           git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
