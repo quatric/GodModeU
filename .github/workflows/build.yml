@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wut
+        run: dkp-pacman -Sy --noconfirm wut wut-tools
+
+      - name: Build
+        run: make
+
+      - name: Package
+        run: |
+          mkdir -p dist/GodModeU
+          cp GodModeU.rpx dist/GodModeU/
+          cp apps/GodModeU/meta.xml apps/GodModeU/icon.png dist/GodModeU/
+          cp README.md LICENSE dist/GodModeU/
+          cp GodModeU.wuhb dist/
+          (cd dist && apt-get update -qq && apt-get install -y -qq zip >/dev/null && zip -qr ../GodModeU.zip GodModeU GodModeU.wuhb)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GodModeU
+          path: GodModeU.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GodModeU
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" GodModeU.zip \
+            --repo "${{ github.repository }}" \
+            --title "GodModeU ${{ github.ref_name }}" \
+            --notes "Copy GodModeU.wuhb to sd:/wiiu/apps/ for Aroma, or the GodModeU folder to sd:/wiiu/apps/ for the Homebrew Launcher. **Changing MLC or NAND data can brick your console** - read the README first."
