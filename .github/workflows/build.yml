@@ -17,9 +17,27 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: devkitpro/wut:latest
+    container: devkitpro/devkitppc:latest
     steps:
       - uses: actions/checkout@v4
+
+      # pkg.devkitpro.org sits behind Cloudflare and sometimes answers 403 to
+      # CI runners, so retry it and fall back to building wut from source.
+      - name: Install wut
+        run: |
+          for i in 1 2 3; do
+            if dkp-pacman -Sy --noconfirm wut wut-tools; then exit 0; fi
+            sleep $((i * 10))
+          done
+          echo "pkg.devkitpro.org unavailable, building wut from source"
+          dkp-pacman -v >/dev/null 2>&1 || true
+          apt-get update -qq
+          apt-get install -y -qq git cmake build-essential zlib1g-dev >/dev/null
+          git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+          cd /tmp/wut
+          make -j"$(nproc)"
+          make install
+          ls "$DEVKITPRO/tools/bin" || true
 
       - name: Build
         run: make
