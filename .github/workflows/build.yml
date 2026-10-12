@@ -17,12 +17,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: devkitpro/devkitppc:latest
+    container: devkitpro/wut:latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install wut
-        run: dkp-pacman -Sy --noconfirm wut wut-tools
 
       - name: Build
         run: make
