@@ -117,8 +117,6 @@ Supported commands: `LIST`, `NLST`, `MLSD`, `RETR` (with `REST`), `STOR`, `DELE`
 These are the things I could not check without a console or an emulator. Each one is a single constant or a short function,
 so they're easy to change once they've been tried:
 
-* **Text grid**: 80 x 30 cells of 16 x 24 pixels, matching OSScreen's built-in font on a 1280 x 720 TV (`source/ui.c`).
-  If the font's pitch differs, the highlight bars will be misaligned with the text.
 * **Mount points**: `/vol/external01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/vol/slc01` for the vWii NAND. The SD
   card uses whatever `WHBGetSdCardMountPath()` returns (`source/vfs.c`).
 * **Colours**: OSScreen text is white only, so colours only tint backgrounds (highlight bars). Text colours are ignored.

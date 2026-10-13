@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include <malloc.h>
 #include <unistd.h>
 
+#include <coreinit/memfrmheap.h>
+#include <coreinit/memheap.h>
 #include <coreinit/screen.h>
+#include <proc_ui/procui.h>
 
 #include "ui.h"
 #include "input.h"
@@ -15,13 +17,16 @@
  * whenever the UI waits for input (see input.c). Text is always white;
  * colours only tint a cell's background, which is how highlight bars are drawn.
  *
- * GRID and CELL sizes assume OSScreen's built-in monospace font on a 1280x720
- * TV (80 x 30 cells of 16 x 24 pixels). They are not verified on hardware. */
-#define GRID_COLS 80
-#define GRID_ROWS 30
-#define CELL_W    16
+ * OSScreenPutFontEx places 12 x 24 pixel cells from (50, 32) on the 1280x720 TV
+ * (decaf-emu's numbers, confirmed on a Wii U), so the grid and bars follow it. */
+#define FONT_X0   50
+#define FONT_Y0   32
+#define CELL_W    12
 #define CELL_H    24
+#define GRID_COLS ((1280 - 2 * FONT_X0) / CELL_W)
+#define GRID_ROWS ((720 - 2 * FONT_Y0) / CELL_H)
 #define BG_NONE   0xff
+#define SCREEN_HEAP_TAG 0x474D5553
 
 static char cells[GRID_ROWS][GRID_COLS];
 static u8 cell_bg[GRID_ROWS][GRID_COLS];
@@ -45,15 +50,42 @@ static const u32 BG_RGBA[8] = {
     0xE6E6E6FF, /* C_WHITE   */
 };
 
-void ui_init(void)
+/* The screen buffer lives in the MEM1 frame heap, which the system takes back
+ * whenever the app loses the foreground. */
+static u32 screen_acquired(void *ctx)
 {
-    OSScreenInit();
-    screen_mem = memalign(0x100, OSScreenGetBufferSizeEx(SCREEN_TV));
+    (void)ctx;
+    MEMHeapHandle heap = MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1);
+    MEMRecordStateForFrmHeap(heap, SCREEN_HEAP_TAG);
+    screen_mem = MEMAllocFromFrmHeapEx(heap, OSScreenGetBufferSizeEx(SCREEN_TV), 0x100);
     if (!screen_mem)
-        return;
+        return 0;
     OSScreenSetBufferEx(SCREEN_TV, screen_mem);
     OSScreenEnableEx(SCREEN_TV, TRUE);
     screen_ready = true;
+    memset(shown_cells, 0, sizeof(shown_cells));
+    return 0;
+}
+
+static u32 screen_released(void *ctx)
+{
+    (void)ctx;
+    if (!screen_ready)
+        return 0;
+    screen_ready = false;
+    MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), SCREEN_HEAP_TAG);
+    screen_mem = NULL;
+    return 0;
+}
+
+void ui_init(void)
+{
+    OSScreenInit();
+    screen_acquired(NULL);
+    ProcUIRegisterCallback(PROCUI_CALLBACK_ACQUIRE, screen_acquired, NULL, 100);
+    ProcUIRegisterCallback(PROCUI_CALLBACK_RELEASE, screen_released, NULL, 100);
+    if (!screen_ready)
+        return;
     ui_clear();
     ui_present();
 }
@@ -62,10 +94,8 @@ void ui_shutdown(void)
 {
     if (!screen_ready)
         return;
-    OSScreenEnableEx(SCREEN_TV, FALSE);
-    free(screen_mem);
-    screen_mem = NULL;
-    screen_ready = false;
+    OSScreenShutdown();
+    screen_released(NULL);
 }
 
 int ui_cols(void) { return g_cols; }
@@ -208,8 +238,8 @@ void ui_present(void)
             while (end < g_cols && cell_bg[r][end] == bg)
                 end++;
             if (bg != BG_NONE && bg < 8) {
-                for (int y = r * CELL_H; y < (r + 1) * CELL_H; y++)
-                    for (int x = c * CELL_W; x < end * CELL_W; x++)
+                for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++)
+                    for (int x = FONT_X0 + c * CELL_W; x < FONT_X0 + end * CELL_W; x++)
                         OSScreenPutPixelEx(SCREEN_TV, x, y, BG_RGBA[bg]);
             }
             c = end;
