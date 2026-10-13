@@ -1059,8 +1059,7 @@ static u64 inst_last_draw;
 static bool install_progress(const char *file, u64 done, u64 total)
 {
     u64 t = now_ms();
-    u32 btn = input_poll_nowait();
-    if (btn & BTN_B)
+    if (input_cancel_held())
         return false;
     if (t - inst_last_draw < 250 && done != total)
         return true;
@@ -1083,7 +1082,9 @@ static bool install_progress(const char *file, u64 done, u64 total)
     ui_color(C_CYAN, true);
     ui_field(ui_rows() - 2, 1, cols - 2, "Hold B: cancel");
     ui_reset();
+#ifdef __WIIU__
     ui_present();
+#endif
     return true;
 }
 

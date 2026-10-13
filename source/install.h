@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include "gmu_types.h"
+#include <stdint.h>
 
 /* Unpacks a .zip / .7z / .rar that was uploaded over FTP onto an SD card or a
  * USB drive, working out where the contents belong:
@@ -16,7 +16,7 @@
  *
  * `cb` is called while working (file name, bytes done, bytes total); return
  * false from it to cancel. */
-typedef bool (*install_cb)(const char *file, u64 done, u64 total);
+typedef bool (*install_cb)(const char *file, uint64_t done, uint64_t total);
 
 bool install_is_archive_name(const char *name);
 
