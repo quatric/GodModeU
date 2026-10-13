@@ -53,6 +53,14 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 * A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
   read-only unless you pick read / write, and protected storage still needs the Konami code on the console.
   Plain FTP, no TLS, so only use it on a network you trust.
+* **FTP install server** (SYSTEM → *FTP install server (archives to SD / USB)*): upload a **`.zip`, `.7z` or `.rar`**
+  (RAR 1.5 - 5.x, single volume, no password) to it and it is unpacked onto the SD card or the first USB drive right away,
+  then the archive is deleted. The files go where they belong: an archive that already holds the drive layout
+  (`wiiu/apps/...`, `apps/...`, `wad/...`) is unpacked at the root of the drive, a wrapper folder around it is dropped,
+  a single program folder (`Foo/Foo.rpx`) goes to `wiiu/apps/Foo`, and loose files get a folder named after the archive
+  (`.wad` files go to `wad/`, Aroma `.wps` plugins to `wiiu/environments/aroma/plugins/`). Docs (`.txt`, `.md`...) at the
+  top level of a ready-made layout are skipped. A failed or cancelled install keeps the archive; hold **B** to cancel.
+  Large 7z and RAR archives need RAM for their dictionary, so an archive can be refused on low memory.
 
 ### Controls
 
@@ -154,4 +162,5 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **wfslib** and **wfs-tools** by koolkdev: the WFS layout that the WFS image reader follows.
 * **vffmod** (wii-tools): the VFF layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
+* **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.
 * **GodModeWii** (quatric): the code this port starts from.

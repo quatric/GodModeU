@@ -10,16 +10,17 @@ include $(WUT_ROOT)/share/wut_rules
 
 TARGET		:=	GodModeU
 BUILD		:=	build
-SOURCES		:=	source
+UNARR		:=	source/unarr source/unarr/common source/unarr/zip source/unarr/rar source/unarr/_7z source/unarr/lzmasdk
+SOURCES		:=	source $(UNARR)
 DATA		:=	data
-INCLUDES	:=	source
+INCLUDES	:=	source $(UNARR)
 
 APP_NAME		:=	GodModeU
 APP_SHORTNAME	:=	GodModeU
 APP_AUTHOR		:=	quatric
 APP_ICON		:=	data/icon.png
 
-CFLAGS	= -g -O2 -Wall $(MACHDEP) $(INCLUDE)
+CFLAGS	= -g -O2 -Wall $(MACHDEP) $(INCLUDE) -DHAVE_7Z
 CXXFLAGS	=	$(CFLAGS)
 LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP)
 
