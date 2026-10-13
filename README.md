@@ -70,14 +70,15 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 | D-Pad Left / Right | Page up / down |
 | **A** | Open folder or archive / actions menu on any other file / paste on the green `Paste` row |
 | **B** | Go up one folder (back to the drive list at the top) |
-| **Y** | Mark / unmark the item and move down |
-| **X** | Actions menu (paste, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, selection tools) |
+| **Y** | Mark / unmark the item and move down / clear the clipboard on the green `Paste` row |
+| **X** | Actions menu (paste, clear clipboard, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, selection tools) |
 | **+** | Copy the marked items (or the item under the cursor). **R** and **ZR** do the same |
 | **-** | Cut the marked items. **L** and **ZL** do the same |
 | **HOME** | SYSTEM menu: lock risky options again, remount drives, FTP server, credits, exit. **Press HOME again to leave** |
 
 Copy or cut something, browse to the destination and press **A** on the green `Paste` row at the top of the list
-(or use *Paste* in the actions menu).
+(or use *Paste* in the actions menu). A copy stays in the clipboard so you can paste it in several places. To empty the
+clipboard without pasting, press **Y** (**1** on a Wii Remote) on the `Paste` row or pick *Clear clipboard* in the actions menu.
 
 The GamePad is the primary input. A Wii Remote with a Classic Controller works as well, and so does a Wii Remote on
 its own (D-Pad, A, B, 1, 2, +, -, HOME). The Classic Controller mapping follows GlowWii's.
