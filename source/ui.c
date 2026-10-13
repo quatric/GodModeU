@@ -2,10 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include <malloc.h>
 #include <unistd.h>
 
+#include <coreinit/cache.h>
+#include <coreinit/memfrmheap.h>
+#include <coreinit/memheap.h>
 #include <coreinit/screen.h>
+#include <proc_ui/procui.h>
 
 #include "ui.h"
 #include "input.h"
@@ -15,13 +18,16 @@
  * whenever the UI waits for input (see input.c). Text is always white;
  * colours only tint a cell's background, which is how highlight bars are drawn.
  *
- * GRID and CELL sizes assume OSScreen's built-in monospace font on a 1280x720
- * TV (80 x 30 cells of 16 x 24 pixels). They are not verified on hardware. */
-#define GRID_COLS 80
-#define GRID_ROWS 30
-#define CELL_W    16
+ * OSScreenPutFontEx places 12 x 24 pixel cells from (50, 32) on the 1280x720 TV
+ * (decaf-emu's numbers, confirmed on a Wii U), so the grid and bars follow it. */
+#define FONT_X0   50
+#define FONT_Y0   32
+#define CELL_W    12
 #define CELL_H    24
+#define GRID_COLS ((1280 - 2 * FONT_X0) / CELL_W)
+#define GRID_ROWS ((720 - 2 * FONT_Y0) / CELL_H)
 #define BG_NONE   0xff
+#define SCREEN_HEAP_TAG 0x474D5553
 
 static char cells[GRID_ROWS][GRID_COLS];
 static u8 cell_bg[GRID_ROWS][GRID_COLS];
@@ -32,6 +38,10 @@ static bool screen_ready;
 static int g_cols = GRID_COLS, g_rows = GRID_ROWS;
 static int cur_row, cur_col;
 static u8 cur_bg = BG_NONE;
+
+/* OSScreen's font is white only, so tinted text is recolored in the buffer. */
+static struct { int row, col, len; u32 rgb; } tints[16];
+static int ntints;
 
 /* 0xRRGGBBXX, one per C_* colour (white is never used as a background). */
 static const u32 BG_RGBA[8] = {
@@ -45,15 +55,42 @@ static const u32 BG_RGBA[8] = {
     0xE6E6E6FF, /* C_WHITE   */
 };
 
-void ui_init(void)
+/* The screen buffer lives in the MEM1 frame heap, which the system takes back
+ * whenever the app loses the foreground. */
+static u32 screen_acquired(void *ctx)
 {
-    OSScreenInit();
-    screen_mem = memalign(0x100, OSScreenGetBufferSizeEx(SCREEN_TV));
+    (void)ctx;
+    MEMHeapHandle heap = MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1);
+    MEMRecordStateForFrmHeap(heap, SCREEN_HEAP_TAG);
+    screen_mem = MEMAllocFromFrmHeapEx(heap, OSScreenGetBufferSizeEx(SCREEN_TV), 0x100);
     if (!screen_mem)
-        return;
+        return 0;
     OSScreenSetBufferEx(SCREEN_TV, screen_mem);
     OSScreenEnableEx(SCREEN_TV, TRUE);
     screen_ready = true;
+    memset(shown_cells, 0, sizeof(shown_cells));
+    return 0;
+}
+
+static u32 screen_released(void *ctx)
+{
+    (void)ctx;
+    if (!screen_ready)
+        return 0;
+    screen_ready = false;
+    MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), SCREEN_HEAP_TAG);
+    screen_mem = NULL;
+    return 0;
+}
+
+void ui_init(void)
+{
+    OSScreenInit();
+    screen_acquired(NULL);
+    ProcUIRegisterCallback(PROCUI_CALLBACK_ACQUIRE, screen_acquired, NULL, 100);
+    ProcUIRegisterCallback(PROCUI_CALLBACK_RELEASE, screen_released, NULL, 100);
+    if (!screen_ready)
+        return;
     ui_clear();
     ui_present();
 }
@@ -62,10 +99,8 @@ void ui_shutdown(void)
 {
     if (!screen_ready)
         return;
-    OSScreenEnableEx(SCREEN_TV, FALSE);
-    free(screen_mem);
-    screen_mem = NULL;
-    screen_ready = false;
+    OSScreenShutdown();
+    screen_released(NULL);
 }
 
 int ui_cols(void) { return g_cols; }
@@ -91,6 +126,63 @@ void ui_clear(void)
     cur_bg = BG_NONE;
     memset(cells, ' ', sizeof(cells));
     memset(cell_bg, BG_NONE, sizeof(cell_bg));
+    ntints = 0;
+}
+
+static void tint(int row, int col, int len, u32 rgb)
+{
+    if (ntints >= (int)(sizeof(tints) / sizeof(tints[0])))
+        return;
+    tints[ntints].row = row;
+    tints[ntints].col = col;
+    tints[ntints].len = len;
+    tints[ntints++].rgb = rgb;
+}
+
+/* There's no API for the back buffer, so a marker pixel finds it and its pitch. */
+static u32 *back_buffer(int *pitch)
+{
+    const u32 mark = 0x01020300;
+    u32 *halves[2] = { screen_mem, (u32 *)screen_mem + OSScreenGetBufferSizeEx(SCREEN_TV) / 8 };
+    u32 *buf = NULL;
+    OSScreenPutPixelEx(SCREEN_TV, 0, 0, mark);
+    OSScreenPutPixelEx(SCREEN_TV, 0, 1, mark);
+    for (int i = 0; i < 2 && !buf; i++)
+        if (halves[i][0] == mark)
+            buf = halves[i];
+    *pitch = 0;
+    for (int i = 1; buf && i < 4096 && !*pitch; i++)
+        if (buf[i] == mark)
+            *pitch = i;
+    OSScreenPutPixelEx(SCREEN_TV, 0, 0, BG_RGBA[C_BLACK]);
+    OSScreenPutPixelEx(SCREEN_TV, 0, 1, BG_RGBA[C_BLACK]);
+    return *pitch ? buf : NULL;
+}
+
+static void apply_tints(void)
+{
+    int pitch;
+    u32 *buf = ntints ? back_buffer(&pitch) : NULL;
+    if (!buf)
+        return;
+    for (int t = 0; t < ntints; t++) {
+        u32 rgb = tints[t].rgb;
+        int x0 = FONT_X0 + tints[t].col * CELL_W, x1 = x0 + tints[t].len * CELL_W;
+        int y0 = FONT_Y0 + tints[t].row * CELL_H;
+        for (int y = y0; y < y0 + CELL_H; y++) {
+            u32 *line = buf + y * pitch;
+            for (int x = x0; x < x1; x++) {
+                /* Scale by the glyph's brightness so anti-aliased edges stay smooth. */
+                u32 v = line[x] >> 24;
+                if (!v)
+                    continue;
+                line[x] = (((rgb >> 16 & 0xff) * v / 255) << 24) |
+                          (((rgb >> 8 & 0xff) * v / 255) << 16) |
+                          (((rgb & 0xff) * v / 255) << 8) | 0xff;
+            }
+            DCFlushRange(line + x0, (x1 - x0) * 4);
+        }
+    }
 }
 
 void ui_bg(int bg)
@@ -208,8 +300,8 @@ void ui_present(void)
             while (end < g_cols && cell_bg[r][end] == bg)
                 end++;
             if (bg != BG_NONE && bg < 8) {
-                for (int y = r * CELL_H; y < (r + 1) * CELL_H; y++)
-                    for (int x = c * CELL_W; x < end * CELL_W; x++)
+                for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++)
+                    for (int x = FONT_X0 + c * CELL_W; x < FONT_X0 + end * CELL_W; x++)
                         OSScreenPutPixelEx(SCREEN_TV, x, y, BG_RGBA[bg]);
             }
             c = end;
@@ -233,6 +325,7 @@ void ui_present(void)
         }
     }
 
+    apply_tints();
     OSScreenFlipBuffersEx(SCREEN_TV);
 }
 
@@ -495,16 +588,18 @@ void ui_splash(const char *status)
     ui_clear();
     int r = g_rows / 2 - 6;
     static const char *art[] = {
-        "  ____           _ __  __           _      __        ___ _ ",
-        " / ___| ___   __| |  \\/  | ___   __| | ___ \\ \\      / (_|_)",
-        "| |  _ / _ \\ / _` | |\\/| |/ _ \\ / _` |/ _ \\ \\ \\ /\\ / /| | |",
-        "| |_| | (_) | (_| | |  | | (_) | (_| |  __/  \\ V  V / | | |",
-        " \\____|\\___/ \\__,_|_|  |_|\\___/ \\__,_|\\___|   \\_/\\_/  |_|_|",
+        "  ____           _ __  __           _        _   _",
+        " / ___| ___   __| |  \\/  | ___   __| | ___  | | | |",
+        "| |  _ / _ \\ / _` | |\\/| |/ _ \\ / _` |/ _ \\ | | | |",
+        "| |_| | (_) | (_| | |  | | (_) | (_| |  __/ | |_| |",
+        " \\____|\\___/ \\__,_|_|  |_|\\___/ \\__,_|\\___|  \\___/",
     };
+    int col = (g_cols - 51) / 2;
     for (int i = 0; i < 5; i++) {
-        ui_goto(r + i, (g_cols - 61) / 2);
-        ui_color(C_CYAN, true);          /* one solid colour for the whole logo */
+        ui_goto(r + i, col);
         ui_puts(art[i]);
+        tint(r + i, col, 44, 0xC0C0C0);      /* "GodMode" in the Wii U logo's silver */
+        tint(r + i, col + 44, 7, 0x009AC7);  /* and the "U" in its blue */
     }
     ui_reset();
     ui_field(r + 7, 0, g_cols - 1, "%*s%s", (g_cols - (int)strlen(status)) / 2, "", status);
