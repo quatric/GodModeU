@@ -1,6 +1,6 @@
 /*
  * Input for the Wii U: the GamePad (VPAD) and any Wii Remote or Classic
- * Controller paired with the console (KPAD). Both are folded into BTN_* bits.
+ * Controller or Wii U Pro Controller paired with the console (KPAD). Both are folded into BTN_* bits.
  * The Classic Controller mapping follows GlowWii's (see README).
  */
 #include <coreinit/thread.h>
@@ -55,6 +55,23 @@ static u32 map_classic(u32 b)
     return out;
 }
 
+static u32 map_pro(u32 b)
+{
+    u32 out = 0;
+    if (b & WPAD_PRO_BUTTON_UP)    out |= BTN_UP;
+    if (b & WPAD_PRO_BUTTON_DOWN)  out |= BTN_DOWN;
+    if (b & WPAD_PRO_BUTTON_LEFT)  out |= BTN_LEFT;
+    if (b & WPAD_PRO_BUTTON_RIGHT) out |= BTN_RIGHT;
+    if (b & WPAD_PRO_BUTTON_A)     out |= BTN_A;
+    if (b & WPAD_PRO_BUTTON_B)     out |= BTN_B;
+    if (b & WPAD_PRO_BUTTON_X)     out |= BTN_2;
+    if (b & WPAD_PRO_BUTTON_Y)     out |= BTN_1;
+    if (b & (WPAD_PRO_BUTTON_PLUS | WPAD_PRO_BUTTON_R | WPAD_PRO_BUTTON_ZR))  out |= BTN_PLUS;
+    if (b & (WPAD_PRO_BUTTON_MINUS | WPAD_PRO_BUTTON_L | WPAD_PRO_BUTTON_ZL)) out |= BTN_MINUS;
+    if (b & WPAD_PRO_BUTTON_HOME)  out |= BTN_HOME;
+    return out;
+}
+
 /* Every connected controller, edge (down) or level (held). */
 static u32 read_pads(bool down)
 {
@@ -71,6 +88,11 @@ static u32 read_pads(bool down)
             KPADStatus ks;
             if (KPADRead(chan, &ks, 1) != KPAD_ERROR_OK)
                 continue;
+            if (ks.extensionType == WPAD_EXT_PRO_CONTROLLER) {
+                /* the Pro Controller reports through its own bits, not the Wii Remote's */
+                out |= map_pro(down ? ks.pro.trigger : ks.pro.hold);
+                continue;
+            }
             out |= (down ? ks.trigger : ks.hold) & WIIMOTE_BUTTONS;
             if (ks.extensionType == WPAD_EXT_CLASSIC)
                 out |= map_classic(down ? ks.classic.trigger : ks.classic.hold);

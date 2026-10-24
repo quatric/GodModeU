@@ -800,7 +800,7 @@ static bool system_menu(void)
         const char *items[10];
         int code[10];
         int n = 0;
-        if (risk_unlocked()) { items[n] = "Lock risky options again"; code[n++] = M_LOCK; }
+        if (risk_unlocked() && !risk_forced()) { items[n] = "Lock risky options again"; code[n++] = M_LOCK; }
         items[n] = "Remount drives (SD / USB / internal)"; code[n++] = M_REMOUNT;
         items[n] = "FTP server (read-only)";               code[n++] = M_FTP_RO;
         items[n] = "FTP server (read/write)";              code[n++] = M_FTP_RW;

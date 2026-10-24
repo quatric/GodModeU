@@ -420,6 +420,11 @@ bool vfs_remove(const char *path, bool is_dir)
     if (arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
         return false;
     arcfs_flush();
+    if (is_dir ? rmdir(real) == 0 : unlink(real) == 0)
+        return true;
+    /* FAT refuses to delete a read-only entry: make it writable and try again */
+    if (!fsa_ready || FSAChangeMode(fsa_client, fsa_path(real), 0x666) != (FSError)FS_STATUS_OK)
+        return false;
     return is_dir ? rmdir(real) == 0 : unlink(real) == 0;
 }
 

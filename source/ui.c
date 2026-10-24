@@ -445,6 +445,24 @@ void ui_message(const char *title, int color, const char *text)
     }
 }
 
+void ui_message_pages(const char *title, int color, const char *const *pages, int n)
+{
+    int i = 0;
+    for (;;) {
+        char head[96];
+        int left;
+        snprintf(head, sizeof(head), "%s  (%d/%d)", title, i + 1, n);
+        draw_text_box(head, color, pages[i], "L / R  Prev / Next    A  OK", 0, NULL, &left);
+        for (;;) {
+            u32 p = DetectInput(IN_DOWN);
+            if (p & (BTN_A | BTN_B | BTN_HOME))
+                return;
+            if (p & BTN_PLUS) { i = (i + 1) % n; break; }
+            if (p & BTN_MINUS) { i = (i + n - 1) % n; break; }
+        }
+    }
+}
+
 bool ui_confirm(const char *title, int color, const char *text)
 {
     int left;

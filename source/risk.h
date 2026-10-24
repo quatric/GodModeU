@@ -2,6 +2,7 @@
 #define RISK_H
 
 #include <stdbool.h>
+#include "gmu_types.h"
 
 /* Anything that changes the protected storage (the Wii U's internal MLC and the
  * vWii NAND) can brick the console, so the first attempt shows a warning and asks
@@ -10,6 +11,7 @@
  * rename, ...). */
 
 bool risk_unlocked(void);
+bool risk_forced(void);
 void risk_lock(void);
 /* Warning + Konami code if the NAND is not unlocked yet. */
 bool risk_ensure_unlocked(void);
@@ -17,5 +19,11 @@ bool risk_ensure_unlocked(void);
 /* Gate for any modifying operation on `path`: asks for the Konami code when
  * needed. Returns false if the user cancelled. */
 bool risk_authorize(const char *path, const char *what);
+
+/* Startup-only helpers (see main.c). */
+void risk_load_forced(void);
+/* Listens for the Konami code until `min_ms` after `began_ms`; true if it went in. */
+bool risk_startup_poll(u32 min_ms, u64 began_ms);
+bool risk_toggle_forced(void);
 
 #endif

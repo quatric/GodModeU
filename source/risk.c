@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <coreinit/time.h>
 
 #include "risk.h"
 #include "ui.h"
@@ -8,8 +11,10 @@
 #include "vfs.h"
 
 static bool g_unlocked;
+static bool g_forced;       /* persistent "always unlocked" switch */
 
-bool risk_unlocked(void) { return g_unlocked; }
+bool risk_unlocked(void) { return g_unlocked || g_forced; }
+bool risk_forced(void) { return g_forced; }
 void risk_lock(void) { g_unlocked = false; }
 
 static const u32 KONAMI[10] = {
@@ -77,7 +82,7 @@ static bool konami_gate(const char *title, const char *const *lines, int n)
 /* Asked the first time something tries to change protected storage. */
 bool risk_ensure_unlocked(void)
 {
-    if (g_unlocked)
+    if (g_unlocked || g_forced)
         return true;
     static const char *const lines[] = {
         "You are about to change the Wii U's protected storage.",
@@ -102,4 +107,78 @@ bool risk_authorize(const char *path, const char *what)
         return true;
     /* One Konami code per session is enough; it asks the first time. */
     return risk_ensure_unlocked();
+}
+
+/* ---------------------------------------------------------------- forced mode */
+
+/* The switch lives in a small file on the SD card. */
+static bool force_real(const char *sub, char *out, size_t n)
+{
+    const vfs_dev *d = &g_devs[DEV_SD];
+    return d->mounted && snprintf(out, n, "%s/wiiu/apps/GodModeU%s", d->real, sub) < (int)n;
+}
+
+void risk_load_forced(void)
+{
+    char p[VFS_PATH_MAX];
+    struct stat st;
+    g_forced = force_real("/force.cfg", p, sizeof(p)) && stat(p, &st) == 0;
+}
+
+static bool force_store(bool on)
+{
+    char p[VFS_PATH_MAX];
+    if (!force_real("/force.cfg", p, sizeof(p)))
+        return false;
+    if (!on) {
+        struct stat st;
+        unlink(p);
+        return stat(p, &st) != 0;
+    }
+    char dir[VFS_PATH_MAX];
+    if (force_real("", dir, sizeof(dir))) {
+        char up[VFS_PATH_MAX];
+        snprintf(up, sizeof(up), "%s/wiiu", g_devs[DEV_SD].real);
+        mkdir(up, 0777);
+        snprintf(up, sizeof(up), "%s/wiiu/apps", g_devs[DEV_SD].real);
+        mkdir(up, 0777);
+        mkdir(dir, 0777);
+    }
+    FILE *f = fopen(p, "wb");
+    if (!f)
+        return false;
+    bool ok = fputs("1\n", f) >= 0;
+    return (fclose(f) == 0) && ok;
+}
+
+/* Keeps listening until at least `min_ms` after begin, then reports whether the code went in. */
+bool risk_startup_poll(u32 min_ms, u64 began_ms)
+{
+    int progress = 0;
+    bool hit = false;
+    const u32 mask = BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT | BTN_A | BTN_B;
+    while (OSTicksToMilliseconds(OSGetSystemTime()) - began_ms < min_ms) {
+        u32 p = input_poll_nowait() & mask;     /* waits one frame */
+        if (!p)
+            continue;
+        if (p == KONAMI[progress])
+            progress++;
+        else
+            progress = (p == KONAMI[0]) ? 1 : 0;
+        if (progress == 10) {
+            hit = true;
+            progress = 0;
+        }
+    }
+    return hit;
+}
+
+/* Flips the persistent switch; returns false if it could not be saved. */
+bool risk_toggle_forced(void)
+{
+    bool want = !g_forced;
+    if (!force_store(want))
+        return false;
+    g_forced = want;
+    return true;
 }

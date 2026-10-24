@@ -17,6 +17,8 @@
 
 enum { POL_ASK, POL_OVERWRITE, POL_SKIP };
 
+#define MAX_ERRS 64
+
 static struct {
     const char *title;
     u64 total_bytes, done_bytes;
@@ -27,7 +29,7 @@ static struct {
     bool cancelled;
     bool redraw;
     int fails;
-    char first_err[VFS_PATH_MAX + 64];
+    char errs[MAX_ERRS][VFS_PATH_MAX + 64];
     char src[VFS_PATH_MAX], dst[VFS_PATH_MAX];
     u8 *buf;
 } X;
@@ -43,9 +45,9 @@ static bool fat_volume(const char *path)
 
 static void fail(const char *what, const char *path)
 {
+    if (X.fails < MAX_ERRS)
+        snprintf(X.errs[X.fails], sizeof(X.errs[0]), "%s:\n%s", what, path);
     X.fails++;
-    if (!X.first_err[0])
-        snprintf(X.first_err, sizeof(X.first_err), "%s:\n%s", what, path);
 }
 
 /* ---------------------------------------------------------------- progress */
@@ -370,21 +372,49 @@ static void unique_name(char *out, size_t outsz, const char *dir, const char *na
     }
 }
 
+/* Page 1 is the result line (with the time taken), then one page per problem. */
+static void summary_pages(const char *title, const char *msg)
+{
+    int shown = X.fails < MAX_ERRS ? X.fails : MAX_ERRS;
+    const char **pages = malloc(sizeof(char *) * (shown + 1));
+    char (*more)[VFS_PATH_MAX + 96] = malloc(sizeof(*more) * (shown ? shown : 1));
+    if (!pages || !more) {
+        free(pages);
+        free(more);
+        ui_message(title, C_YELLOW, msg);
+        return;
+    }
+    pages[0] = msg;
+    for (int i = 0; i < shown; i++) {
+        snprintf(more[i], sizeof(more[0]), "Problem %d of %d%s\n\n%s", i + 1, X.fails,
+                 X.fails > shown ? " (only the first ones are kept)" : "", X.errs[i]);
+        pages[i + 1] = more[i];
+    }
+    ui_message_pages(title, C_YELLOW, pages, shown + 1);
+    free(pages);
+    free(more);
+}
+
 static void summary(const char *verb, bool ok)
 {
     char msg[512];
     u64 el = (now_ms() - X.start_ms) / 1000;
     if (X.cancelled)
         snprintf(msg, sizeof(msg), "Cancelled after %u file(s).", (unsigned)X.files_done);
-    else if (X.fails)
-        snprintf(msg, sizeof(msg), "%d problem(s). First one:\n%s", X.fails, X.first_err);
-    else {
+    else if (X.fails) {
+        char sz[32];
+        ui_fmt_size(sz, sizeof(sz), X.done_bytes);
+        snprintf(msg, sizeof(msg), "%s %u file(s)%s%s in %us.\n\n%d problem(s). Press R to browse them.",
+                 verb, (unsigned)X.files_done, X.done_bytes ? ", " : "", X.done_bytes ? sz : "", (unsigned)el, X.fails);
+    } else {
         char sz[32];
         ui_fmt_size(sz, sizeof(sz), X.done_bytes);
         snprintf(msg, sizeof(msg), "%s %u file(s)%s%s in %us.", verb, (unsigned)X.files_done,
                  X.done_bytes ? ", " : "", X.done_bytes ? sz : "", (unsigned)el);
     }
-    if (!ok || X.cancelled || X.fails)
+    if (X.fails && !X.cancelled)
+        summary_pages("FINISHED WITH ERRORS", msg);
+    else if (!ok || X.cancelled || X.fails)
         ui_message(X.cancelled ? "CANCELLED" : "FINISHED WITH ERRORS", C_YELLOW, msg);
     else
         ui_message("DONE", C_GREEN, msg);

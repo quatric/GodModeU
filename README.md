@@ -49,6 +49,10 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 * Copy, cut, paste and delete between any two writable drives, folders included, with a progress screen,
   transfer speed, overwrite / skip prompts and **hold B to cancel**. Half-written files are removed again.
 * Multi-select, select all / invert, rename, new folder, folder size / info, a text viewer and a hex viewer.
+* **Read-only FAT files and folders can be deleted.** Copy / move / delete summaries keep the result line (files, size, time)
+  and let you page through every problem with **L / R** (**-** / **+**).
+* **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
+  off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code.
 * Konami-code gate (asked once, when you first try to change protected storage) and brick warnings.
 * A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
   read-only unless you pick read / write, and protected storage still needs the Konami code on the console.

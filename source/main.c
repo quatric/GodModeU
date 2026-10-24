@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <coreinit/systeminfo.h>
 #include <coreinit/title.h>
+#include <coreinit/time.h>
 #include <whb/proc.h>
 #include <sysapp/launch.h>
 
@@ -37,7 +38,23 @@ int main(int argc, char **argv)
 
     input_init();
     ui_splash("Looking for drives...");
+    uint64_t began = OSTicksToMilliseconds(OSGetSystemTime());
     vfs_init();
+    bool toggled = risk_startup_poll(2500, began);
+    risk_load_forced();
+    if (toggled) {
+        if (!risk_toggle_forced())
+            ui_message("RISKY MODE", C_RED, "Could not save the setting. Is the SD card writable?");
+        else if (risk_forced())
+            ui_message("RISKY MODE FORCED ON", C_RED,
+                       "Dangerous permissions are now ALWAYS enabled, and stay that way every time this program starts. "
+                       "Nothing will ask for a warning or code first.");
+        else
+            ui_message("RISKY MODE OFF", C_GREEN, "Dangerous permissions are no longer forced. Risky changes ask for the warning and code again.");
+    } else if (risk_forced()) {
+        ui_message("RISKY MODE FORCED ON", C_RED,
+                   "Dangerous permissions are ALWAYS enabled. Nothing will ask for a warning or code first.");
+    }
 
     int mode = app_run();
 
