@@ -15,8 +15,8 @@
 
 /* The TV is a character grid, like the console's text mode was: everything is
  * written into a cell buffer, and ui_present() paints the grid with OSScreen
- * whenever the UI waits for input (see input.c). Text is always white;
- * colours only tint a cell's background, which is how highlight bars are drawn.
+ * whenever the UI waits for input (see input.c). OSScreen's font is white only,
+ * so text and background colors are blended into each colored cell afterwards.
  *
  * OSScreenPutFontEx places 12 x 24 pixel cells from (50, 32) on the 1280x720 TV
  * (decaf-emu's numbers, confirmed on a Wii U), so the grid and bars follow it. */
@@ -34,13 +34,16 @@
 
 static char cells[GRID_ROWS][GRID_COLS];
 static u8 cell_bg[GRID_ROWS][GRID_COLS];
+static u8 cell_fg[GRID_ROWS][GRID_COLS];    /* C_* color, +8 when bold */
 static char shown_cells[GRID_ROWS][GRID_COLS];
 static u8 shown_bg[GRID_ROWS][GRID_COLS];
+static u8 shown_fg[GRID_ROWS][GRID_COLS];
 static void *screen_mem[2];     /* indexed by SCREEN_TV / SCREEN_DRC */
 static bool screen_ready;
 static int g_cols = GRID_COLS, g_rows = GRID_ROWS;
 static int cur_row, cur_col;
 static u8 cur_bg = BG_NONE;
+static u8 cur_fg = C_WHITE;
 
 /* OSScreen's font is white only, so tinted text is recolored in the buffer. */
 static struct { int row, col, len; u32 rgb; } tints[16];
@@ -56,6 +59,13 @@ static const u32 BG_RGBA[8] = {
     0x9A3AA8FF, /* C_MAGENTA */
     0x1C9CB8FF, /* C_CYAN    */
     0xE6E6E6FF, /* C_WHITE   */
+};
+
+/* Text colors from libogc's console palette, so they match GodModeWii; bold picks the bright row.
+ * White stays OSScreen's own white, so plain text needs no blending. */
+static const u32 FG_RGB[16] = {
+    0x000000, 0x750506, 0x0A7A0B, 0x7E8110, 0x030071, 0x770876, 0x0D7C7B, 0xFFFFFF,
+    0x000000, 0xEA0B0B, 0x16F417, 0xFEFF21, 0x0503E3, 0xEE0FEC, 0x19F8F8, 0xFFFFFF,
 };
 
 /* The screen buffer lives in the MEM1 frame heap, which the system takes back
@@ -119,6 +129,7 @@ static void put(int row, int col, char ch)
         return;
     cells[row][col] = ch;
     cell_bg[row][col] = cur_bg;
+    cell_fg[row][col] = cur_fg;
 }
 
 /* Callers use 0-based cells. */
@@ -131,8 +142,10 @@ void ui_goto(int row, int col)
 void ui_clear(void)
 {
     cur_bg = BG_NONE;
+    cur_fg = C_WHITE;
     memset(cells, ' ', sizeof(cells));
     memset(cell_bg, BG_NONE, sizeof(cell_bg));
+    memset(cell_fg, C_WHITE, sizeof(cell_fg));
     ntints = 0;
 }
 
@@ -192,6 +205,46 @@ static void apply_tints(void)
     }
 }
 
+/* A white-on-black glyph pixel of brightness v, as text color fg over background bg (0xRRGGBB). */
+static u32 mix(u32 bg, u32 fg, u32 v)
+{
+    u32 out = 0xff;
+    for (int s = 0; s <= 16; s += 8)
+        out |= (((bg >> s & 0xff) * (255 - v) + (fg >> s & 0xff) * v) / 255) << (s + 8);
+    return out;
+}
+
+/* Blending by brightness keeps the font's anti-aliased edges in every color. */
+static void color_cells(void)
+{
+    int pitch;
+    u32 *buf = back_buffer(SCREEN_TV, &pitch);
+    if (!buf)
+        return;
+    DCFlushRange(buf + FONT_Y0 * pitch, g_rows * CELL_H * pitch * 4);
+    for (int r = 0; r < g_rows; r++) {
+        int c = 0;
+        while (c < g_cols) {
+            u8 bg = cell_bg[r][c], fg = cell_fg[r][c];
+            int end = c + 1;
+            while (end < g_cols && cell_bg[r][end] == bg && cell_fg[r][end] == fg)
+                end++;
+            bool plain = (bg >= 8 || bg == C_BLACK) && (fg & 7) == C_WHITE;
+            if (!plain) {
+                u32 b = bg < 8 ? BG_RGBA[bg] >> 8 : 0, f = FG_RGB[fg & 15];
+                int x0 = FONT_X0 + c * CELL_W, x1 = FONT_X0 + end * CELL_W;
+                for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++) {
+                    u32 *line = buf + y * pitch;
+                    for (int x = x0; x < x1; x++)
+                        line[x] = mix(b, f, line[x] >> 24);
+                    DCFlushRange(line + x0, (x1 - x0) * 4);
+                }
+            }
+            c = end;
+        }
+    }
+}
+
 static u32 blend(u32 a, u32 b, u32 c, u32 d, u32 wa, u32 wb, u32 wc, u32 wd)
 {
     if (a == b && a == c && a == d)
@@ -232,16 +285,15 @@ void ui_bg(int bg)
     cur_bg = (u8)bg;
 }
 
-/* Text colours don't exist in OSScreen's font; kept so the callers read the same. */
 void ui_color(int fg, bool bold)
 {
-    (void)fg;
-    (void)bold;
+    cur_fg = (u8)((fg & 7) | (bold ? 8 : 0));
 }
 
 void ui_reset(void)
 {
     cur_bg = BG_NONE;
+    cur_fg = C_WHITE;
 }
 
 void ui_putc(int c)
@@ -291,16 +343,20 @@ void ui_fill(int row, int col, int width, char c)
 
 void ui_bar(int row, int col, int width, int pct, int color)
 {
-    (void)color;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     int inner = width - 2;
     if (inner < 0) inner = 0;
     int fill = inner * pct / 100;
     ui_goto(row, col);
+    ui_color(C_WHITE, false);
     ui_putc('[');
-    for (int i = 0; i < inner; i++)
-        ui_putc(i < fill ? '#' : '-');
+    ui_color(color, true);
+    for (int i = 0; i < fill; i++)
+        ui_putc('#');
+    ui_color(C_WHITE, false);
+    for (int i = fill; i < inner; i++)
+        ui_putc('-');
     ui_putc(']');
 }
 
@@ -326,31 +382,16 @@ void ui_present(void)
 {
     if (!screen_ready)
         return;
-    if (!memcmp(cells, shown_cells, sizeof(cells)) && !memcmp(cell_bg, shown_bg, sizeof(cell_bg)))
+    if (!memcmp(cells, shown_cells, sizeof(cells)) && !memcmp(cell_bg, shown_bg, sizeof(cell_bg)) &&
+        !memcmp(cell_fg, shown_fg, sizeof(cell_fg)))
         return;
     memcpy(shown_cells, cells, sizeof(cells));
     memcpy(shown_bg, cell_bg, sizeof(cell_bg));
+    memcpy(shown_fg, cell_fg, sizeof(cell_fg));
 
     OSScreenClearBufferEx(SCREEN_TV, BG_RGBA[C_BLACK]);
 
-    /* Background: one rectangle per run of equal cells on a row. */
-    for (int r = 0; r < g_rows; r++) {
-        int c = 0;
-        while (c < g_cols) {
-            u8 bg = cell_bg[r][c];
-            int end = c + 1;
-            while (end < g_cols && cell_bg[r][end] == bg)
-                end++;
-            if (bg != BG_NONE && bg < 8) {
-                for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++)
-                    for (int x = FONT_X0 + c * CELL_W; x < FONT_X0 + end * CELL_W; x++)
-                        OSScreenPutPixelEx(SCREEN_TV, x, y, BG_RGBA[bg]);
-            }
-            c = end;
-        }
-    }
-
-    /* Text: runs of non-blank characters, so blank cells never cover a background. */
+    /* Text in white on black first; color_cells() then paints the colors in. */
     char run[GRID_COLS + 1];
     for (int r = 0; r < g_rows; r++) {
         int c = 0;
@@ -367,6 +408,7 @@ void ui_present(void)
         }
     }
 
+    color_cells();
     apply_tints();
     mirror_to_drc();
     OSScreenFlipBuffersEx(SCREEN_TV);
