@@ -9,6 +9,7 @@
 #include <coreinit/time.h>
 #include <whb/proc.h>
 #include <sysapp/launch.h>
+#include <sndcore2/core.h>
 
 #include "app.h"
 #include "ui.h"
@@ -33,6 +34,9 @@ int main(int argc, char **argv)
     /* HOME opens the app's own SYSTEM menu; this must come before ProcUI starts. */
     OSEnableHomeButtonMenu(FALSE);
     WHBProcInit();
+    /* Starting the sound system silences the loading music, which otherwise keeps looping. */
+    AXInit();
+    AXQuit();
     ui_init();
     ui_splash("Starting...");
 
