@@ -28,12 +28,15 @@
 #define GRID_ROWS ((720 - 2 * FONT_Y0) / CELL_H)
 #define BG_NONE   0xff
 #define SCREEN_HEAP_TAG 0x474D5553
+/* The GamePad mirrors the TV at 2/3 size; 1280 * 2/3 leaves its last column black. */
+#define DRC_W     853
+#define DRC_H     480
 
 static char cells[GRID_ROWS][GRID_COLS];
 static u8 cell_bg[GRID_ROWS][GRID_COLS];
 static char shown_cells[GRID_ROWS][GRID_COLS];
 static u8 shown_bg[GRID_ROWS][GRID_COLS];
-static void *screen_mem;
+static void *screen_mem[2];     /* indexed by SCREEN_TV / SCREEN_DRC */
 static bool screen_ready;
 static int g_cols = GRID_COLS, g_rows = GRID_ROWS;
 static int cur_row, cur_col;
@@ -62,11 +65,15 @@ static u32 screen_acquired(void *ctx)
     (void)ctx;
     MEMHeapHandle heap = MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1);
     MEMRecordStateForFrmHeap(heap, SCREEN_HEAP_TAG);
-    screen_mem = MEMAllocFromFrmHeapEx(heap, OSScreenGetBufferSizeEx(SCREEN_TV), 0x100);
-    if (!screen_mem)
-        return 0;
-    OSScreenSetBufferEx(SCREEN_TV, screen_mem);
-    OSScreenEnableEx(SCREEN_TV, TRUE);
+    for (int id = SCREEN_TV; id <= SCREEN_DRC; id++) {
+        screen_mem[id] = MEMAllocFromFrmHeapEx(heap, OSScreenGetBufferSizeEx(id), 0x100);
+        if (!screen_mem[id]) {
+            MEMFreeByStateToFrmHeap(heap, SCREEN_HEAP_TAG);
+            return 0;
+        }
+        OSScreenSetBufferEx(id, screen_mem[id]);
+        OSScreenEnableEx(id, TRUE);
+    }
     screen_ready = true;
     memset(shown_cells, 0, sizeof(shown_cells));
     return 0;
@@ -79,7 +86,7 @@ static u32 screen_released(void *ctx)
         return 0;
     screen_ready = false;
     MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), SCREEN_HEAP_TAG);
-    screen_mem = NULL;
+    screen_mem[SCREEN_TV] = screen_mem[SCREEN_DRC] = NULL;
     return 0;
 }
 
@@ -140,13 +147,13 @@ static void tint(int row, int col, int len, u32 rgb)
 }
 
 /* There's no API for the back buffer, so a marker pixel finds it and its pitch. */
-static u32 *back_buffer(int *pitch)
+static u32 *back_buffer(OSScreenID id, int *pitch)
 {
     const u32 mark = 0x01020300;
-    u32 *halves[2] = { screen_mem, (u32 *)screen_mem + OSScreenGetBufferSizeEx(SCREEN_TV) / 8 };
+    u32 *halves[2] = { screen_mem[id], (u32 *)screen_mem[id] + OSScreenGetBufferSizeEx(id) / 8 };
     u32 *buf = NULL;
-    OSScreenPutPixelEx(SCREEN_TV, 0, 0, mark);
-    OSScreenPutPixelEx(SCREEN_TV, 0, 1, mark);
+    OSScreenPutPixelEx(id, 0, 0, mark);
+    OSScreenPutPixelEx(id, 0, 1, mark);
     for (int i = 0; i < 2 && !buf; i++)
         if (halves[i][0] == mark)
             buf = halves[i];
@@ -154,15 +161,15 @@ static u32 *back_buffer(int *pitch)
     for (int i = 1; buf && i < 4096 && !*pitch; i++)
         if (buf[i] == mark)
             *pitch = i;
-    OSScreenPutPixelEx(SCREEN_TV, 0, 0, BG_RGBA[C_BLACK]);
-    OSScreenPutPixelEx(SCREEN_TV, 0, 1, BG_RGBA[C_BLACK]);
+    OSScreenPutPixelEx(id, 0, 0, BG_RGBA[C_BLACK]);
+    OSScreenPutPixelEx(id, 0, 1, BG_RGBA[C_BLACK]);
     return *pitch ? buf : NULL;
 }
 
 static void apply_tints(void)
 {
     int pitch;
-    u32 *buf = ntints ? back_buffer(&pitch) : NULL;
+    u32 *buf = ntints ? back_buffer(SCREEN_TV, &pitch) : NULL;
     if (!buf)
         return;
     for (int t = 0; t < ntints; t++) {
@@ -182,6 +189,41 @@ static void apply_tints(void)
             }
             DCFlushRange(line + x0, (x1 - x0) * 4);
         }
+    }
+}
+
+static u32 blend(u32 a, u32 b, u32 c, u32 d, u32 wa, u32 wb, u32 wc, u32 wd)
+{
+    if (a == b && a == c && a == d)
+        return a;
+    u32 out = 0xff;
+    for (int s = 8; s <= 24; s += 8)
+        out |= (((a >> s & 0xff) * wa + (b >> s & 0xff) * wb +
+                 (c >> s & 0xff) * wc + (d >> s & 0xff) * wd) / 9) << s;
+    return out;
+}
+
+/* Each GamePad pixel covers 1.5 x 1.5 TV pixels: two per axis, weighted 2:1 or 1:2. */
+static void mirror_to_drc(void)
+{
+    int tv_pitch, drc_pitch;
+    u32 *tv = back_buffer(SCREEN_TV, &tv_pitch);
+    OSScreenClearBufferEx(SCREEN_DRC, BG_RGBA[C_BLACK]);
+    u32 *drc = back_buffer(SCREEN_DRC, &drc_pitch);
+    if (!tv || !drc)
+        return;
+    /* Read what OSScreen drew, not stale cache lines from an earlier frame. */
+    DCFlushRange(tv, tv_pitch * 720 * 4);
+    for (int dy = 0; dy < DRC_H; dy++) {
+        const u32 *r0 = tv + (dy / 2 * 3 + (dy & 1)) * tv_pitch, *r1 = r0 + tv_pitch;
+        u32 y0 = (dy & 1) ? 1 : 2, y1 = 3 - y0;
+        u32 *out = drc + dy * drc_pitch;
+        for (int dx = 0; dx < DRC_W; dx++) {
+            int sx = dx / 2 * 3 + (dx & 1);
+            u32 x0 = (dx & 1) ? 1 : 2, x1 = 3 - x0;
+            out[dx] = blend(r0[sx], r0[sx + 1], r1[sx], r1[sx + 1], x0 * y0, x1 * y0, x0 * y1, x1 * y1);
+        }
+        DCFlushRange(out, DRC_W * 4);
     }
 }
 
@@ -326,7 +368,9 @@ void ui_present(void)
     }
 
     apply_tints();
+    mirror_to_drc();
     OSScreenFlipBuffersEx(SCREEN_TV);
+    OSScreenFlipBuffersEx(SCREEN_DRC);
 }
 
 /* ---------------------------------------------------------------- boxes */
