@@ -97,7 +97,7 @@ These depend on the Wii's IOS, the Wii's hardware or the vWii, and have no equiv
 * SD Gecko slots and GameCube memory cards
 * the runtime IOS patch and the Dolphin / vWii detection
 * the Wii-only controller libraries (libwiidrc, libwupc, libsicksaxis). The GamePad and Wii Remotes are read through Cafe OS
-  instead. Wii U Pro Controller, PS3 pads and USB keyboards aren't supported yet
+  instead, and so is the Wii U Pro Controller. PS3 pads and USB keyboards aren't supported yet
 * the `content.bin` and `data.bin` decryption that needs this console's own keys. WAD contents still decrypt with the
   common keys.
 

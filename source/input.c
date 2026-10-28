@@ -108,6 +108,8 @@ void input_init(void)
     VPADInit();
     vpad_ready = true;
     KPADInit();
+    /* Pro Controllers only stay connected to apps that opt in. */
+    WPADEnableURCC(TRUE);
     kpad_ready = true;
 }
 
