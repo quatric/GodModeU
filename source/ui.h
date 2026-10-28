@@ -30,6 +30,8 @@ void ui_fmt_size(char *out, size_t n, u64 bytes);
 
 /* Shows the grid as drawn so far. Input polling does this on its own. */
 void ui_present(void);
+/* Lets Aroma's plugin menu (L + Down + Minus) open over the app, then redraws. */
+void ui_plugin_menu(void);
 
 /* Dialogs. All of them block and leave the screen for the caller to redraw. */
 void ui_message(const char *title, int color, const char *text);

@@ -8,6 +8,8 @@
 #include <coreinit/memfrmheap.h>
 #include <coreinit/memheap.h>
 #include <coreinit/screen.h>
+#include <gx2/state.h>
+#include <gx2/swap.h>
 #include <proc_ui/procui.h>
 
 #include "ui.h"
@@ -102,6 +104,8 @@ static u32 screen_released(void *ctx)
 
 void ui_init(void)
 {
+    /* GX2 is only here so ui_plugin_menu() can swap; it comes first, then OSScreen. */
+    GX2Init(NULL);
     OSScreenInit();
     screen_acquired(NULL);
     ProcUIRegisterCallback(PROCUI_CALLBACK_ACQUIRE, screen_acquired, NULL, 100);
@@ -118,6 +122,22 @@ void ui_shutdown(void)
         return;
     OSScreenShutdown();
     screen_released(NULL);
+    GX2Shutdown();
+}
+
+/* Aroma opens its plugin menu inside GX2SwapScanBuffers and draws it with OSScreen into its
+ * own buffers, so the app offers it a swap and then points the screens back at ours. */
+void ui_plugin_menu(void)
+{
+    if (!screen_ready)
+        return;
+    GX2SwapScanBuffers();
+    for (int id = SCREEN_TV; id <= SCREEN_DRC; id++) {
+        OSScreenSetBufferEx(id, screen_mem[id]);
+        OSScreenEnableEx(id, TRUE);
+    }
+    memset(shown_cells, 0, sizeof(shown_cells));
+    ui_present();
 }
 
 int ui_cols(void) { return g_cols; }

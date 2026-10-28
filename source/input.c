@@ -86,6 +86,36 @@ static u32 map_kpad(const KPADStatus *ks, bool down)
 /* A read right after another finds no new sample, so the last held buttons are kept for it. */
 static u32 vpad_hold, kpad_hold[WPAD_CHAN_3 + 1];
 
+/* Aroma's plugin menu combo on each controller (WiiUPluginLoaderBackend's VPADRead/WPADRead hooks). */
+#define AROMA_VPAD    (VPAD_BUTTON_L | VPAD_BUTTON_DOWN | VPAD_BUTTON_MINUS)
+#define AROMA_WIIMOTE (WPAD_BUTTON_B | WPAD_BUTTON_DOWN | WPAD_BUTTON_MINUS)
+#define AROMA_CLASSIC (WPAD_CLASSIC_BUTTON_L | WPAD_CLASSIC_BUTTON_DOWN | WPAD_CLASSIC_BUTTON_MINUS)
+#define AROMA_PRO     (WPAD_PRO_TRIGGER_L | WPAD_PRO_BUTTON_DOWN | WPAD_PRO_BUTTON_MINUS)
+static u32 vpad_raw_prev;
+/* Per controller, kept like the held buttons when a read finds no new sample. */
+static bool vpad_combo_on, kpad_combo_on[WPAD_CHAN_3 + 1];
+static bool combo_down, plugin_menu_wanted;
+
+static bool kpad_combo(const KPADStatus *ks)
+{
+    if (ks->extensionType == WPAD_EXT_PRO_CONTROLLER)
+        return ks->pro.hold == AROMA_PRO;
+    if (ks->extensionType == WPAD_EXT_CLASSIC)
+        return ks->classic.hold == AROMA_CLASSIC;
+    return ks->hold == AROMA_WIIMOTE;
+}
+
+/* Aroma zeroes the GamePad sample where the combo first completes, so a held-then-vanished
+ * part of it counts too. */
+static bool vpad_combo(const VPADStatus *st)
+{
+    u32 raw = st->hold & 0xFFFFF, prev = vpad_raw_prev;
+    vpad_raw_prev = raw;
+    if (raw == AROMA_VPAD)
+        return true;
+    return !raw && !st->release && !(prev & ~AROMA_VPAD) && __builtin_popcount(prev) >= 2;
+}
+
 /* Every connected controller, edge (down) or level (held). */
 static u32 read_pads(bool down)
 {
@@ -95,11 +125,13 @@ static u32 read_pads(bool down)
         VPADReadError err = VPAD_READ_SUCCESS;
         VPADRead(VPAD_CHAN_0, &st, 1, &err);
         if (err == VPAD_READ_SUCCESS) {
+            vpad_combo_on = vpad_combo(&st);
             vpad_hold = map_vpad(st.hold);
             if (down)
                 out |= map_vpad(st.trigger);
         } else if (err != VPAD_READ_NO_SAMPLES) {
             vpad_hold = 0;
+            vpad_combo_on = false;
         }
         if (!down)
             out |= vpad_hold;
@@ -110,17 +142,26 @@ static u32 read_pads(bool down)
             KPADError err = KPAD_ERROR_OK;
             /* ks is only set when a sample was written. */
             if (KPADReadEx(chan, &ks, 1, &err) > 0 && err == KPAD_ERROR_OK) {
+                kpad_combo_on[chan] = kpad_combo(&ks);
                 kpad_hold[chan] = map_kpad(&ks, false);
                 if (down)
                     out |= map_kpad(&ks, true);
             } else if (err != KPAD_ERROR_NO_SAMPLES && err != KPAD_ERROR_OK) {
                 kpad_hold[chan] = 0;
+                kpad_combo_on[chan] = false;
             }
             if (!down)
                 out |= kpad_hold[chan];
         }
     }
-    return out;
+    bool combo = vpad_combo_on;
+    for (int chan = WPAD_CHAN_0; chan <= WPAD_CHAN_3; chan++)
+        combo |= kpad_combo_on[chan];
+    if (combo && !combo_down)
+        plugin_menu_wanted = true;
+    combo_down = combo;
+    /* The combo is Aroma's, not a file manager command. */
+    return combo ? 0 : out;
 }
 
 void input_init(void)
@@ -147,7 +188,12 @@ static u32 detect(bool down, bool wait)
         OSSleepTicks(OSMillisecondsToTicks(16));
     if (!WHBProcIsRunning())
         g_quit_request = true;
-    return read_pads(down);
+    u32 pads = read_pads(down);
+    if (plugin_menu_wanted) {
+        plugin_menu_wanted = false;
+        ui_plugin_menu();
+    }
+    return pads;
 }
 
 u32 DetectInput(u8 down_or_held)
