@@ -579,7 +579,7 @@ bool ui_text_input(const char *title, char *buf, int maxlen)
     int pos = len ? len - 1 : 0;
     int left, strip_row;
     int row = draw_window(title, C_CYAN, 4, w, "A  OK     B  Cancel", &left, &strip_row);
-    win_text(row + 2, left, w, C_CYAN, true, "U/D char  L/R move  +/- jump  1 del  2 space");
+    win_text(row + 2, left, w, C_CYAN, true, "U/D char  L/R move  +/- jump  Y/1 del  X/2 space");
 
     for (;;) {
         int vis = w - 6;

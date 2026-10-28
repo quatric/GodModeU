@@ -276,9 +276,9 @@ static void draw_browser(void)
 
     ui_color(C_CYAN, true);
     if (off && cursor == 0)
-        ui_field(rows - 2, 1, cols - 2, "A Paste  B Back  1 Clear clipboard  2 Menu  + Copy  - Cut");
+        ui_field(rows - 2, 1, cols - 2, "A Paste  B Back  Y/1 Clear clipboard  X/2 Menu  R/+ Copy  L/- Cut");
     else
-        ui_field(rows - 2, 1, cols - 2, "A Open  B Back  1 Mark  2 Menu  + Copy  - Cut");
+        ui_field(rows - 2, 1, cols - 2, "A Open  B Back  Y/1 Mark  X/2 Menu  R/+ Copy  L/- Cut");
     ui_color(C_WHITE, false);
     ui_field(rows - 1, 1, cols - 2, "HOME System menu    D-Pad L/R Page");
     ui_reset();
