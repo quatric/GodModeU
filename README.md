@@ -78,7 +78,7 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 | **X** | Actions menu (paste, clear clipboard, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, selection tools) |
 | **+** | Copy the marked items (or the item under the cursor). **R** and **ZR** do the same |
 | **-** | Cut the marked items. **L** and **ZL** do the same |
-| **HOME** | SYSTEM menu: lock risky options again, remount drives, FTP server, credits, exit. **Press HOME again to leave** |
+| **HOME** | SYSTEM menu: lock risky options again, remount drives, FTP server, credits, exit. Press HOME or B again to close it |
 
 Copy or cut something, browse to the destination and press **A** on the green `Paste` row at the top of the list
 (or use *Paste* in the actions menu). A copy stays in the clipboard so you can paste it in several places. To empty the

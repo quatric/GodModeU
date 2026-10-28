@@ -810,11 +810,8 @@ static bool system_menu(void)
         if (launched_from_hbl()) { items[n] = "Exit to Homebrew Launcher"; code[n++] = M_LOADER; }
         items[n] = "Exit to Wii U Menu";                   code[n++] = M_WIIMENU;
 
-        int r = ui_menu_ex("SYSTEM", items, NULL, n, 0, "A Select   B Back   HOME Exit");
-        if (r == UI_MENU_HOME) {            /* HOME, HOME: back to the Homebrew Launcher */
-            exit_req = EXIT_LOADER;
-            return true;
-        }
+        /* HOME closes the menu like the Wii U's own HOME Menu; leaving is always an explicit choice. */
+        int r = ui_menu_ex("SYSTEM", items, NULL, n, 0, "A Select   B / HOME Back");
         if (r < 0)
             return false;
         switch (code[r]) {
