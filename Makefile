@@ -6,6 +6,12 @@ endif
 export DEVKITPPC ?= $(DEVKITPRO)/devkitPPC
 export WUT_ROOT ?= $(DEVKITPRO)/wut
 
+# wut_rules reads these when it is included, so they must come first.
+APP_NAME		:=	GodModeU
+APP_SHORTNAME	:=	GodModeU
+APP_AUTHOR		:=	quatric
+APP_ICON		:=	$(CURDIR)/data/icon.png
+
 include $(WUT_ROOT)/share/wut_rules
 
 TARGET		:=	GodModeU
@@ -14,11 +20,6 @@ UNARR		:=	source/unarr source/unarr/common source/unarr/zip source/unarr/rar sou
 SOURCES		:=	source $(UNARR)
 DATA		:=	data
 INCLUDES	:=	source $(UNARR)
-
-APP_NAME		:=	GodModeU
-APP_SHORTNAME	:=	GodModeU
-APP_AUTHOR		:=	quatric
-APP_ICON		:=	data/icon.png
 
 CFLAGS	= -g -O2 -Wall $(MACHDEP) $(INCLUDE) -DHAVE_7Z
 CXXFLAGS	=	$(CFLAGS)
