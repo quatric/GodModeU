@@ -180,13 +180,13 @@ static void mount_sd(void)
         snprintf(d->note, sizeof(d->note), "no SD card (insert one, then Remount)");
 }
 
-/* Cafe OS mounts each USB volume as /vol/external01 .. external08. */
+/* Cafe OS mounts a Wii U-formatted drive as /vol/storage_usb01; external01 is the SD card. */
 static void mount_usb(void)
 {
     for (int i = 0; i < USB_SLOTS; i++) {
         vfs_dev *d = &g_devs[DEV_USB0 + i];
         char vol[32];
-        snprintf(vol, sizeof(vol), "fs:/vol/external%02d", i + 1);
+        snprintf(vol, sizeof(vol), "fs:/vol/storage_usb%02d", i + 1);
         snprintf(d->real, sizeof(d->real), "%s", vol);
         d->mounted = dir_exists(vol);
         d->note[0] = '\0';

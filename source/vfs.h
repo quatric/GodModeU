@@ -7,7 +7,7 @@
 
 /* One flat namespace for every storage device the Wii U can mount:
  *   sd:/path         SD card                       (read / write)
- *   usb1:/..usb8:/   USB drives, one per volume    (read / write; FAT or WFS, as Cafe OS mounts them)
+ *   usb1:/..usb8:/   Wii U-formatted USB drives    (read / write)
  *   mlc:/path        Wii U internal storage (MLC)  (protected: Konami code to change anything)
  *   nand:/path       vWii NAND (SLC)               (protected: needs system access, Konami code to change anything)
  * Each drive is reached through its Cafe OS mount point ("fs:/vol/...") via the

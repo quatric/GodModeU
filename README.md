@@ -32,7 +32,7 @@ listed under [Unverified assumptions](#unverified-assumptions). Reports from rea
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/` ... `usb8:/` | every volume Cafe OS mounts (`/vol/external01` ... `external08`). FAT, exFAT and WFS are handled by the system |
+| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up. FAT32 and exFAT USB drives aren't mounted by the system, so they don't show up yet |
 | Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
 | vWii NAND (SLC) | `nand:/` | the vWii NAND. Protected, and only visible if the app is allowed to mount it (Aroma / Mocha) |
 
@@ -122,7 +122,7 @@ Supported commands: `LIST`, `NLST`, `MLSD`, `RETR` (with `REST`), `STOR`, `DELE`
 These are the things I could not check without a console or an emulator. Each one is a single constant or a short function,
 so they're easy to change once they've been tried:
 
-* **Mount points**: `/vol/external01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/vol/slc01` for the vWii NAND. The SD
+* **Mount points**: `/vol/storage_usb01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/vol/slc01` for the vWii NAND. The SD
   card uses whatever `WHBGetSdCardMountPath()` returns (`source/vfs.c`).
 * **Colours**: OSScreen text is white only, so colours only tint backgrounds (highlight bars). Text colours are ignored.
 * **Networking**: the IP comes from `ACGetAssignedAddress`, and the FTP server runs on the BSD sockets from wut's `nsysnet`.
