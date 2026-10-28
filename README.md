@@ -13,8 +13,9 @@ the protected storage.
 > console unbootable.
 >
 > * Everything on protected storage is **locked by default**. Copying *from* it is always safe.
-> * The first time you try to change protected storage (delete, paste, cut, rename, new folder, ...) a warning appears and
->   you must enter the **Konami code**. It stays unlocked until you exit or lock it again from the SYSTEM menu.
+> * The first time you try to change a protected drive (delete, paste, cut, rename, new folder, ...) a warning appears and
+>   you must enter the **Konami code**. Each drive (MLC, vWii NAND, Wii U NAND) asks for its own code, and stays unlocked
+>   until you exit or lock it again from the SYSTEM menu.
 > * **Make a full NAND / MLC backup first** and keep a copy off the console.
 > * This software comes with **no warranty**. You are solely responsible for whatever you do with it.
 >
@@ -55,7 +56,7 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
   off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code, except the
   Wii U NAND's own warning, once per session.
-* Konami-code gate (asked once, when you first try to change protected storage) and brick warnings.
+* Konami-code gate (asked once per drive, when you first try to change it) and brick warnings.
 * A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
   read-only unless you pick read / write, and protected storage still needs the Konami code on the console.
   Plain FTP, no TLS, so only use it on a network you trust.

@@ -142,8 +142,8 @@ static void draw_header(void)
     int cols = ui_cols();
     char left[64], right[48];
     snprintf(left, sizeof(left), " GodModeU v%s", GMW_VERSION);
-    snprintf(right, sizeof(right), "%s ", risk_unlocked() ? "[ RISKY MODE ON ]" : "[ SAFE MODE ]");
-    ui_bg(risk_unlocked() ? C_RED : C_BLUE);
+    snprintf(right, sizeof(right), "%s ", risk_any_unlocked() ? "[ RISKY MODE ON ]" : "[ SAFE MODE ]");
+    ui_bg(risk_any_unlocked() ? C_RED : C_BLUE);
     ui_color(C_WHITE, true);
     int gap = cols - 1 - (int)strlen(left) - (int)strlen(right);
     if (gap < 1) gap = 1;
@@ -322,7 +322,7 @@ static void draw_home(void)
         else ui_color(d->mounted ? C_WHITE : C_RED, d->mounted);
         char note[56] = "";
         if (d->mounted && vfs_is_protected(devs[idx]))
-            snprintf(note, sizeof(note), "%s", risk_unlocked() ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
+            snprintf(note, sizeof(note), "%s", risk_dev_unlocked(devs[idx]) ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
         else if (!d->mounted && d->note[0])
             snprintf(note, sizeof(note), "%s", d->note);
         else if (!d->mounted)
@@ -584,8 +584,9 @@ static void do_copy_cut(bool cut)
     int n;
     char **t = targets(&n);
     if (!n) return;
-    /* Cutting from the NAND removes files there: ask for the code now. */
-    if (cut && vfs_is_protected(vfs_dev_of(t[0])) && !risk_ensure_unlocked()) {
+    /* Cutting from protected storage removes files there: ask for that drive's code now. */
+    int src_dev = vfs_dev_of(t[0]);
+    if (cut && vfs_is_protected(src_dev) && !risk_ensure_unlocked(src_dev)) {
         free_paths(t, n);
         return;
     }
@@ -656,7 +657,7 @@ static void do_rename(void)
     if (vfs_exists(dst))
         ui_message("ERROR", C_RED, "Something with that name already exists.");
     else if (!vfs_rename(old, dst))
-        ui_message("ERROR", C_RED, "Rename failed.");
+        ui_message("ERROR", C_RED, g_write_err ? g_write_err : "Rename failed.");
     else
         status(C_GREEN, "Renamed.");
     load_dir(cwd, name);
@@ -675,7 +676,7 @@ static void do_mkdir(void)
     if (vfs_exists(dst))
         ui_message("ERROR", C_RED, "Something with that name already exists.");
     else if (!vfs_mkdir(dst))
-        ui_message("ERROR", C_RED, "Could not create the folder.");
+        ui_message("ERROR", C_RED, g_write_err ? g_write_err : "Could not create the folder.");
     else
         vfs_update_space(dev);
     load_dir(cwd, name);
@@ -800,7 +801,7 @@ static bool system_menu(void)
         const char *items[10];
         int code[10];
         int n = 0;
-        if (risk_unlocked() && !risk_forced()) { items[n] = "Lock risky options again"; code[n++] = M_LOCK; }
+        if (risk_any_unlocked() && !risk_forced()) { items[n] = "Lock risky options again"; code[n++] = M_LOCK; }
         items[n] = "Remount drives (SD / USB / internal)"; code[n++] = M_REMOUNT;
         items[n] = "FTP server (read-only)";               code[n++] = M_FTP_RO;
         items[n] = "FTP server (read/write)";              code[n++] = M_FTP_RW;

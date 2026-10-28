@@ -198,7 +198,7 @@ static bool copy_file(const char *src, const char *dst)
     }
     if (!vfs_open_write(&out, dst)) {
         vfs_close(&in);
-        fail("Cannot create", dst);
+        fail(g_write_err ? g_write_err : "Cannot create", dst);
         return false;
     }
     vfs_unbuffered(&in);
@@ -296,7 +296,7 @@ static bool copy_tree(const char *src, const char *dst_dir, const char *name)
             return false;
         }
     } else if (!vfs_mkdir(dst)) {
-        fail("Cannot create folder", dst);
+        fail(g_write_err ? g_write_err : "Cannot create folder", dst);
         return false;
     }
 
@@ -349,7 +349,7 @@ static bool delete_tree(const char *path)
             return false;
     }
     if (!vfs_remove(path, is_dir)) {
-        fail("Cannot delete", path);
+        fail(g_write_err ? g_write_err : "Cannot delete", path);
         return false;
     }
     X.files_done++;

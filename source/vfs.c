@@ -12,6 +12,7 @@
 
 #include "vfs.h"
 #include "arcfs.h"
+#include "risk.h"
 
 vfs_dev g_devs[DEV_COUNT] = {
     { "sd:",   "sd:/",   "SD Card",          "SD",   true,  false, false, 0, 0 },
@@ -461,11 +462,21 @@ bool vfs_exists(const char *path)
 
 /* ---------------------------------------------------------------- modify */
 
+/* Callers ask for the Konami code first; this keeps a locked drive unwritable even if one forgets. */
+static bool unlocked_for_write(const char *path)
+{
+    if (risk_dev_writable(vfs_dev_of(path)))
+        return true;
+    g_write_err = "Protected drive is locked (Konami code not entered)";
+    return false;
+}
+
 bool vfs_mkdir(const char *path)
 {
+    g_write_err = NULL;
     int dev = vfs_dev_of(path);
     char real[VFS_PATH_MAX];
-    if (dev < 0 || arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
+    if (dev < 0 || arcfs_is_path(path) || !unlocked_for_write(path) || !to_real(path, real, sizeof(real)))
         return false;
     arcfs_flush();
     return mkdir(real, 0777) == 0;
@@ -473,8 +484,9 @@ bool vfs_mkdir(const char *path)
 
 bool vfs_remove(const char *path, bool is_dir)
 {
+    g_write_err = NULL;
     char real[VFS_PATH_MAX];
-    if (arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
+    if (arcfs_is_path(path) || !unlocked_for_write(path) || !to_real(path, real, sizeof(real)))
         return false;
     arcfs_flush();
     if (is_dir ? rmdir(real) == 0 : unlink(real) == 0)
@@ -488,8 +500,9 @@ bool vfs_remove(const char *path, bool is_dir)
 
 bool vfs_rename(const char *from, const char *to)
 {
+    g_write_err = NULL;
     int a = vfs_dev_of(from), b = vfs_dev_of(to);
-    if (a < 0 || a != b || arcfs_is_path(from) || arcfs_is_path(to))
+    if (a < 0 || a != b || arcfs_is_path(from) || arcfs_is_path(to) || !unlocked_for_write(from))
         return false;
     char rf[VFS_PATH_MAX], rt[VFS_PATH_MAX];
     if (!to_real(from, rf, sizeof(rf)) || !to_real(to, rt, sizeof(rt)))
@@ -525,7 +538,7 @@ bool vfs_open_write(vfs_file *f, const char *path)
     memset(f, 0, sizeof(*f));
     f->dev = vfs_dev_of(path);
     g_write_err = NULL;
-    if (arcfs_is_path(path) || f->dev < 0)
+    if (arcfs_is_path(path) || f->dev < 0 || !unlocked_for_write(path))
         return false;
     char real[VFS_PATH_MAX];
     if (!to_real(path, real, sizeof(real)))

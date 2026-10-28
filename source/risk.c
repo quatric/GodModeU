@@ -10,13 +10,18 @@
 #include "input.h"
 #include "vfs.h"
 
-static bool g_unlocked;
+static u32 g_unlocked;      /* one bit per protected drive, so each asks for its own code */
 static bool g_forced;       /* persistent "always unlocked" switch */
 static bool g_slc_warned;   /* the Wii U NAND's own warning, once per session */
 
-bool risk_unlocked(void) { return g_unlocked || g_forced; }
+bool risk_any_unlocked(void) { return g_unlocked || g_forced; }
+bool risk_dev_unlocked(int dev) { return g_forced || (dev >= 0 && (g_unlocked & (1u << dev))); }
+bool risk_dev_writable(int dev)
+{
+    return !vfs_is_protected(dev) || (risk_dev_unlocked(dev) && (dev != DEV_SLC || g_slc_warned));
+}
 bool risk_forced(void) { return g_forced; }
-void risk_lock(void) { g_unlocked = false; g_slc_warned = false; }
+void risk_lock(void) { g_unlocked = 0; g_slc_warned = false; }
 
 static const u32 KONAMI[10] = {
     BTN_UP, BTN_UP, BTN_DOWN, BTN_DOWN,
@@ -84,13 +89,16 @@ static bool konami_gate(const char *title, const char *const *lines, int n)
     return true;
 }
 
-/* Asked the first time something tries to change protected storage. */
-bool risk_ensure_unlocked(void)
+/* Asked the first time something tries to change this protected drive. */
+bool risk_ensure_unlocked(int dev)
 {
-    if (g_unlocked || g_forced)
+    if (risk_dev_unlocked(dev))
         return true;
-    static const char *const lines[] = {
-        "You are about to change the Wii U's protected storage.",
+    char first[96];
+    snprintf(first, sizeof(first), "You are about to change the %s, part of the Wii U's protected storage.",
+             g_devs[dev].name);
+    const char *const lines[] = {
+        first,
         "",
         "* A wrong move here can PERMANENTLY BRICK your console.",
         "* Deleting system titles, tickets or the vWii NAND is fatal.",
@@ -98,10 +106,11 @@ bool risk_ensure_unlocked(void)
         "* The vWii NAND is just as fragile as a Wii's.",
         "* No warranty. You are solely responsible for what you do.",
         "* Not sure what a file does? Leave it alone.",
+        "* The code unlocks this drive only, until you exit or lock it again.",
     };
-    if (!konami_gate("RISKY OPTION - READ THIS", lines, 8))
+    if (!konami_gate("RISKY OPTION - READ THIS", lines, sizeof(lines) / sizeof(lines[0])))
         return false;
-    g_unlocked = true;
+    g_unlocked |= 1u << dev;
     return true;
 }
 
@@ -145,8 +154,7 @@ bool risk_authorize(const char *path, const char *what)
     int dev = vfs_dev_of(path);
     if (!vfs_is_protected(dev))
         return true;
-    /* One Konami code per session is enough; it asks the first time. */
-    if (!risk_ensure_unlocked())
+    if (!risk_ensure_unlocked(dev))
         return false;
     if (dev == DEV_SLC && !g_slc_warned)
         g_slc_warned = slc_warning();

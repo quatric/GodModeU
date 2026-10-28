@@ -611,7 +611,7 @@ static void do_list(sess_t *s, int op, const char *arg)
             ents[0].size = size;
             n = 1;
         }
-        s->ro_list = !g_rw || (vfs_is_protected(dev) && !risk_unlocked());
+        s->ro_list = !g_rw || !risk_dev_writable(dev);
     }
     s->buf = malloc(IO_CHUNK);
     if (!s->buf) { free(ents); reply(s, "451 Out of memory"); return; }
@@ -1123,7 +1123,7 @@ static void draw(u32 ip)
 {
     int cols = ui_cols(), rows = ui_rows();
     ui_clear();
-    ui_bg(risk_unlocked() ? C_RED : C_BLUE);
+    ui_bg(risk_any_unlocked() ? C_RED : C_BLUE);
     ui_color(C_WHITE, true);
     ui_field(0, 0, cols - 1, " GodModeU v%s  -  FTP SERVER", GMW_VERSION);
     ui_reset();
