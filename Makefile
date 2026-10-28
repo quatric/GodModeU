@@ -11,6 +11,8 @@ APP_NAME		:=	GodModeU
 APP_SHORTNAME	:=	GodModeU
 APP_AUTHOR		:=	quatric
 APP_ICON		:=	$(CURDIR)/data/icon.png
+APP_TV_SPLASH	:=	$(CURDIR)/data/tv-splash.png
+APP_DRC_SPLASH	:=	$(CURDIR)/data/drc-splash.png
 
 include $(WUT_ROOT)/share/wut_rules
 
