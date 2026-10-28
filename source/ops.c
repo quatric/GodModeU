@@ -117,6 +117,8 @@ static bool prog_tick(bool force)
     } else {
         prog_paint(false);
     }
+    /* The screen only refreshes when the input layer waits for a button, which a copy never does. */
+    ui_present();
     if (input_cancel_held()) {
         X.cancelled = true;
     }
