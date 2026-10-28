@@ -11,7 +11,8 @@
  *   mlc:/path        Wii U internal storage (MLC)  (protected: Konami code to change anything)
  *   nand:/path       vWii NAND (SLC)               (protected: needs system access, Konami code to change anything)
  * Each drive is reached through its Cafe OS mount point ("fs:/vol/...") via the
- * FSA devoptab, so the normal stdio calls work on it. */
+ * FSA devoptab, or through a Mocha devoptab when the app lacks permission, so the
+ * normal stdio calls work on it. */
 
 #define USB_SLOTS 8
 
@@ -46,7 +47,7 @@ typedef struct {
     bool space_known;
     u64 total;
     u64 free;
-    char real[VFS_PATH_MAX];  /* Cafe OS mount point, "fs:/vol/..." (no trailing slash) */
+    char real[VFS_PATH_MAX];  /* "fs:/vol/..." or a Mocha devoptab, "storage_usb01:" (no trailing slash) */
     char note[48];
 } vfs_dev;
 

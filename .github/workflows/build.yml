@@ -38,6 +38,11 @@ jobs:
           make install
           ls "$DEVKITPRO/tools/bin" || true
 
+      - name: Build libmocha
+        run: |
+          apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null
+          ./scripts/build_libmocha.sh
+
       - name: Build
         run: make
 

@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <coreinit/filesystem_fsa.h>
 #include <whb/sdcard.h>
+#include <mocha/mocha.h>
 
 #include "vfs.h"
 #include "arcfs.h"
@@ -29,6 +30,8 @@ vfs_dev g_devs[DEV_COUNT] = {
 const char *g_write_err;
 static FSAClientHandle fsa_client;
 static bool fsa_ready;
+static bool mocha_ready;
+static char mocha_name[DEV_COUNT][16];  /* the Mocha devoptab a drive is reached through, if any */
 
 /* ---------------------------------------------------------------- paths */
 
@@ -77,10 +80,17 @@ static bool to_real(const char *path, char *out, size_t outsz)
     return n > 0 && (size_t)n < outsz;
 }
 
-/* The FSA calls want "/vol/..." without the devoptab prefix. */
-static const char *fsa_path(const char *real)
+/* The FSA calls want "/vol/..." without the devoptab prefix. Mocha devoptabs are named after
+ * their volume: "storage_usb01:/x" -> "/vol/storage_usb01/x". */
+static const char *fsa_path(const char *real, char *buf, size_t n)
 {
-    return strncmp(real, "fs:", 3) == 0 ? real + 3 : real;
+    if (strncmp(real, "fs:", 3) == 0)
+        return real + 3;
+    const char *colon = strchr(real, ':');
+    if (!colon)
+        return real;
+    snprintf(buf, n, "/vol/%.*s%s", (int)(colon - real), real, colon + 1);
+    return buf;
 }
 
 bool vfs_parent(const char *path, char *out, size_t outsz)
@@ -180,29 +190,55 @@ static void mount_sd(void)
         snprintf(d->note, sizeof(d->note), "no SD card (insert one, then Remount)");
 }
 
+/* An app may lack permission for a system volume. Aroma's Mocha can then reach it through an
+ * unlocked client, as a devoptab named after the volume. */
+static bool attach_vol(int dev, const char *vol)
+{
+    vfs_dev *d = &g_devs[dev];
+    snprintf(d->real, sizeof(d->real), "fs:/vol/%s", vol);
+    if (dir_exists(d->real))
+        return true;
+    char mnt[32], root[32];
+    snprintf(mnt, sizeof(mnt), "/vol/%s", vol);
+    snprintf(root, sizeof(root), "%s:/", vol);
+    if (mocha_ready && Mocha_MountFS(vol, NULL, mnt) == MOCHA_RESULT_SUCCESS) {
+        /* Mocha registers the devoptab even when nothing is mounted there. */
+        if (dir_exists(root)) {
+            snprintf(mocha_name[dev], sizeof(mocha_name[dev]), "%s", vol);
+            snprintf(d->real, sizeof(d->real), "%s:", vol);
+            return true;
+        }
+        Mocha_UnmountFS(vol);
+    }
+    d->real[0] = '\0';
+    return false;
+}
+
+static void detach_all(void)
+{
+    for (int i = 0; i < DEV_COUNT; i++) {
+        if (mocha_name[i][0])
+            Mocha_UnmountFS(mocha_name[i]);
+        mocha_name[i][0] = '\0';
+    }
+}
+
 /* Cafe OS mounts a Wii U-formatted drive as /vol/storage_usb01; external01 is the SD card. */
 static void mount_usb(void)
 {
     for (int i = 0; i < USB_SLOTS; i++) {
-        vfs_dev *d = &g_devs[DEV_USB0 + i];
-        char vol[32];
-        snprintf(vol, sizeof(vol), "fs:/vol/storage_usb%02d", i + 1);
-        snprintf(d->real, sizeof(d->real), "%s", vol);
-        d->mounted = dir_exists(vol);
-        d->note[0] = '\0';
-        if (!d->mounted)
-            d->real[0] = '\0';
+        char vol[16];
+        snprintf(vol, sizeof(vol), "storage_usb%02d", i + 1);
+        g_devs[DEV_USB0 + i].mounted = attach_vol(DEV_USB0 + i, vol);
+        g_devs[DEV_USB0 + i].note[0] = '\0';
     }
 }
 
 static void mount_internal(void)
 {
     vfs_dev *mlc = &g_devs[DEV_MLC];
-    mlc->real[0] = '\0';
-    mlc->mounted = dir_exists("fs:/vol/storage_mlc01");
-    if (mlc->mounted)
-        snprintf(mlc->real, sizeof(mlc->real), "fs:/vol/storage_mlc01");
-    else
+    mlc->mounted = attach_vol(DEV_MLC, "storage_mlc01");
+    if (!mlc->mounted)
         snprintf(mlc->note, sizeof(mlc->note), "not accessible");
 
     vfs_dev *nand = &g_devs[DEV_NAND];
@@ -221,6 +257,8 @@ static void fsa_start(void)
     FSAInit();
     fsa_client = FSAAddClient(NULL);
     fsa_ready = fsa_client != 0;
+    if (fsa_ready && mocha_ready)
+        Mocha_UnlockFSClientEx(fsa_client);
 }
 
 void vfs_update_space(int dev)
@@ -229,7 +267,8 @@ void vfs_update_space(int dev)
     d->space_known = false;
     if (!d->mounted || !fsa_ready)
         return;
-    const char *fp = fsa_path(d->real);
+    char buf[VFS_PATH_MAX];
+    const char *fp = fsa_path(d->real, buf, sizeof(buf));
     u64 freeb = 0;
     FSADeviceInfo info;
     if (FSAGetFreeSpaceSize(fsa_client, fp, &freeb) != (FSError)FS_STATUS_OK)
@@ -243,6 +282,7 @@ void vfs_update_space(int dev)
 
 static void mount_all(void)
 {
+    detach_all();
     mount_sd();
     mount_usb();
     mount_internal();
@@ -252,6 +292,7 @@ static void mount_all(void)
 
 void vfs_init(void)
 {
+    mocha_ready = Mocha_InitLibrary() == MOCHA_RESULT_SUCCESS;
     fsa_start();
     mount_all();
 }
@@ -267,11 +308,16 @@ void vfs_shutdown(void)
 {
     arcfs_flush();
     WHBUnmountSdCard();
+    detach_all();
     for (int i = 0; i < DEV_COUNT; i++)
         g_devs[i].mounted = false;
     if (fsa_ready) {
         FSADelClient(fsa_client);
         fsa_ready = false;
+    }
+    if (mocha_ready) {
+        Mocha_DeInitLibrary();
+        mocha_ready = false;
     }
 }
 
@@ -423,7 +469,8 @@ bool vfs_remove(const char *path, bool is_dir)
     if (is_dir ? rmdir(real) == 0 : unlink(real) == 0)
         return true;
     /* FAT refuses to delete a read-only entry: make it writable and try again */
-    if (!fsa_ready || FSAChangeMode(fsa_client, fsa_path(real), 0x666) != (FSError)FS_STATUS_OK)
+    char buf[VFS_PATH_MAX];
+    if (!fsa_ready || FSAChangeMode(fsa_client, fsa_path(real, buf, sizeof(buf)), 0x666) != (FSError)FS_STATUS_OK)
         return false;
     return is_dir ? rmdir(real) == 0 : unlink(real) == 0;
 }

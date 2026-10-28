@@ -28,8 +28,8 @@ CXXFLAGS	=	$(CFLAGS)
 LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP)
 
 # whb (the helper library), coreinit, vpad, padscore, nsysnet, nn::ac and the
-# FSA devoptab all live in libwut.
-LIBS	:=	-lwut -lm
+# FSA devoptab all live in libwut. libmocha (C++, so it needs libstdc++) comes from scripts/build_libmocha.sh.
+LIBS	:=	-lmocha -lstdc++ -lwut -lm
 LIBDIRS	:=	$(WUT_ROOT)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -51,8 +51,9 @@ export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
 					$(sFILES:.s=.o) $(SFILES:.S=.o)
 export INCLUDE	:=	$(foreach dir,$(INCLUDES), -iquote $(CURDIR)/$(dir)) \
 					-I$(CURDIR)/$(BUILD) \
-					-I$(WUT_ROOT)/include
-export LIBPATHS	:=	-L$(WUT_ROOT)/lib
+					-I$(WUT_ROOT)/include \
+					-I$(CURDIR)/portlibs/mocha/include
+export LIBPATHS	:=	-L$(WUT_ROOT)/lib -L$(CURDIR)/portlibs/mocha/lib
 export LDFLAGS	:=	$(LDFLAGS)
 
 .PHONY: $(BUILD) clean all

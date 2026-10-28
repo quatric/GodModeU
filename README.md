@@ -144,6 +144,7 @@ You need [devkitPro](https://devkitpro.org/) with devkitPPC and the wut toolchai
 ```sh
 dkp-pacman -S wut wut-tools
 export DEVKITPRO=/opt/devkitpro
+./scripts/build_libmocha.sh   # once: builds libmocha into ./portlibs/mocha
 make
 ```
 
@@ -165,5 +166,6 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **wfslib** and **wfs-tools** by koolkdev: the WFS layout that the WFS image reader follows.
 * **vffmod** (wii-tools): the VFF layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
+* **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive and internal storage through Aroma's Mocha when the app isn't allowed to by itself.
 * **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.
 * **GodModeWii** (quatric): the code this port starts from.
