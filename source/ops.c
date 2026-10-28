@@ -130,7 +130,8 @@ static void begin(const char *title, u64 bytes, u32 files)
     X.total_bytes = bytes;
     X.files_total = files;
     X.start_ms = X.last_ms = now_ms();
-    X.buf = memalign(32, CHUNK);
+    /* FSA reads and writes straight from 64-byte-aligned buffers. */
+    X.buf = memalign(64, CHUNK);
     prog_paint(true);
 }
 
@@ -198,6 +199,8 @@ static bool copy_file(const char *src, const char *dst)
         fail("Cannot create", dst);
         return false;
     }
+    vfs_unbuffered(&in);
+    vfs_unbuffered(&out);
 
     bool ok = true;
     for (;;) {

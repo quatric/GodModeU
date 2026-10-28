@@ -477,6 +477,13 @@ bool vfs_open_write(vfs_file *f, const char *path)
     return f->fp != NULL;
 }
 
+/* wut reports 512-byte blocks, so stdio would split every copy chunk into 512-byte requests. */
+void vfs_unbuffered(vfs_file *f)
+{
+    if (f->fp)
+        setvbuf(f->fp, NULL, _IONBF, 0);
+}
+
 s32 vfs_read(vfs_file *f, void *buf, u32 len)
 {
     if (f->arc)
