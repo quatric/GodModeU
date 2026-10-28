@@ -34,7 +34,8 @@ listed under [Unverified assumptions](#unverified-assumptions). Reports from rea
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
 | USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up. FAT32 and exFAT USB drives aren't mounted by the system, so they don't show up yet |
 | Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
-| vWii NAND (SLC) | `nand:/` | the vWii NAND. Protected, and only visible if the app is allowed to mount it (Aroma / Mocha) |
+| vWii NAND (SLCCMPT) | `nand:/` | the vWii's NAND: System Menu, IOS, Wii channels and saves. Protected: Konami code to change anything. Mounted through Aroma's Mocha |
+| Wii U NAND (SLC) | `slc:/` | the Wii U's own system NAND. Protected: Konami code, plus a red warning the first time you change it in a session, because a mistake there can stop the Wii U from booting at all. Mounted through Aroma's Mocha |
 
 Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 
@@ -52,7 +53,8 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 * **Read-only FAT files and folders can be deleted.** Copy / move / delete summaries keep the result line (files, size, time)
   and let you page through every problem with **L / R** (**-** / **+**).
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
-  off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code.
+  off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code, except the
+  Wii U NAND's own warning, once per session.
 * Konami-code gate (asked once, when you first try to change protected storage) and brick warnings.
 * A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
   read-only unless you pick read / write, and protected storage still needs the Konami code on the console.
@@ -104,13 +106,13 @@ These depend on the Wii's IOS, the Wii's hardware or the vWii, and have no equiv
 ## FTP server
 
 SYSTEM → *FTP server (read-only)* or *(read/write)* opens a status screen with the address, the user name (`godmode`) and a
-fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, ...).
+fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, `/slc`, ...).
 
 * **Login is always required**; the password is random per run. Failed logins are throttled and a burst of them locks the server for a minute.
 * **LAN only**: peers outside private / link-local ranges are refused.
 * **No FTP bounce / hijack**: `PORT` must point back at the client (port >= 1024) and passive data connections must come from the client's IP.
 * **Sandboxed paths**: every path is canonicalised inside the virtual root.
-* **Read-only by default.** Changes to MLC / NAND need the Konami code on the console.
+* **Read-only by default.** Changes to MLC / NAND need the Konami code on the console (and the Wii U NAND's warning).
 * **Safe uploads**: files go to a temporary name and only replace the target when complete.
 * `RMD` only removes empty folders; nothing is deleted recursively over the network.
 
@@ -122,7 +124,7 @@ Supported commands: `LIST`, `NLST`, `MLSD`, `RETR` (with `REST`), `STOR`, `DELE`
 These are the things I could not check without a console or an emulator. Each one is a single constant or a short function,
 so they're easy to change once they've been tried:
 
-* **Mount points**: `/vol/storage_usb01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/vol/slc01` for the vWii NAND. The SD
+* **Mount points**: `/vol/storage_usb01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/dev/slccmpt01` at `/vol/storage_slccmpt01` for the vWii NAND and `/dev/slc01` at `/vol/storage_slc01` for the Wii U NAND. The SD
   card uses whatever `WHBGetSdCardMountPath()` returns (`source/vfs.c`).
 * **Colours**: OSScreen text is white only, so colours only tint backgrounds (highlight bars). Text colours are ignored.
 * **Networking**: the IP comes from `ACGetAssignedAddress`, and the FTP server runs on the BSD sockets from wut's `nsysnet`.
@@ -166,6 +168,6 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **wfslib** and **wfs-tools** by koolkdev: the WFS layout that the WFS image reader follows.
 * **vffmod** (wii-tools): the VFF layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
-* **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive and internal storage through Aroma's Mocha when the app isn't allowed to by itself.
+* **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive, internal storage and both NANDs through Aroma's Mocha when the app isn't allowed to by itself.
 * **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.
 * **GodModeWii** (quatric): the code this port starts from.

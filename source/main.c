@@ -52,12 +52,13 @@ int main(int argc, char **argv)
         else if (risk_forced())
             ui_message("RISKY MODE FORCED ON", C_RED,
                        "Dangerous permissions are now ALWAYS enabled, and stay that way every time this program starts. "
-                       "Nothing will ask for a warning or code first.");
+                       "Nothing will ask for a warning or code first, except a one-time warning for the Wii U NAND.");
         else
             ui_message("RISKY MODE OFF", C_GREEN, "Dangerous permissions are no longer forced. Risky changes ask for the warning and code again.");
     } else if (risk_forced()) {
         ui_message("RISKY MODE FORCED ON", C_RED,
-                   "Dangerous permissions are ALWAYS enabled. Nothing will ask for a warning or code first.");
+                   "Dangerous permissions are ALWAYS enabled. Nothing will ask for a warning or code first, "
+                   "except a one-time warning for the Wii U NAND.");
     }
 
     int mode = app_run();

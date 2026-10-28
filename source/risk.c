@@ -12,10 +12,11 @@
 
 static bool g_unlocked;
 static bool g_forced;       /* persistent "always unlocked" switch */
+static bool g_slc_warned;   /* the Wii U NAND's own warning, once per session */
 
 bool risk_unlocked(void) { return g_unlocked || g_forced; }
 bool risk_forced(void) { return g_forced; }
-void risk_lock(void) { g_unlocked = false; }
+void risk_lock(void) { g_unlocked = false; g_slc_warned = false; }
 
 static const u32 KONAMI[10] = {
     BTN_UP, BTN_UP, BTN_DOWN, BTN_DOWN,
@@ -100,13 +101,52 @@ bool risk_ensure_unlocked(void)
     return true;
 }
 
+/* A broken vWii NAND can be repaired from the Wii U side, but a broken Wii U NAND may leave
+ * nothing that boots, so it warns once more, even in forced mode. */
+static bool slc_warning(void)
+{
+    static const char *const lines[] = {
+        "You are about to change the Wii U NAND (SLC): the Wii U's own system, not the vWii's.",
+        "",
+        "* It holds IOSU, the system titles, the boot settings and scfm.img (the MLC's cache).",
+        "* If a change here goes wrong, the Wii U may not start at all, so Aroma can't fix it.",
+        "* A vWii NAND mistake can be repaired from the Wii U side. This one may not be.",
+        "* Recovery then needs ISFShax installed beforehand, or a hardware mod (de_Fuse).",
+        "* Back up the SLC first, and only change files you know the purpose of.",
+        "",
+        "This warning appears once per session, even in forced risky mode.",
+    };
+    int cols = ui_cols(), rows = ui_rows();
+    ui_clear();
+    ui_bg(C_RED);
+    for (int r = 0; r < rows; r++)
+        ui_fill(r, 0, cols, ' ');
+    ui_field(1, 2, cols - 4, "!!!  WII U NAND  -  YOUR WII U MAY NEVER START AGAIN  !!!");
+    for (int i = 0; i < (int)(sizeof(lines) / sizeof(lines[0])); i++)
+        ui_field(4 + i, 2, cols - 4, "%s", lines[i]);
+    ui_field(rows - 3, 2, cols - 4, "A  I have a backup, change it          B  Cancel");
+    ui_reset();
+    for (;;) {
+        u32 p = DetectInput(IN_DOWN);
+        if (p & BTN_A)
+            return true;
+        if (p & (BTN_B | BTN_HOME))
+            return false;
+    }
+}
+
 bool risk_authorize(const char *path, const char *what)
 {
     (void)what;
-    if (!vfs_is_protected(vfs_dev_of(path)))
+    int dev = vfs_dev_of(path);
+    if (!vfs_is_protected(dev))
         return true;
     /* One Konami code per session is enough; it asks the first time. */
-    return risk_ensure_unlocked();
+    if (!risk_ensure_unlocked())
+        return false;
+    if (dev == DEV_SLC && !g_slc_warned)
+        g_slc_warned = slc_warning();
+    return dev != DEV_SLC || g_slc_warned;
 }
 
 /* ---------------------------------------------------------------- forced mode */

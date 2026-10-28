@@ -9,7 +9,8 @@
  *   sd:/path         SD card                       (read / write)
  *   usb1:/..usb8:/   Wii U-formatted USB drives    (read / write)
  *   mlc:/path        Wii U internal storage (MLC)  (protected: Konami code to change anything)
- *   nand:/path       vWii NAND (SLC)               (protected: needs system access, Konami code to change anything)
+ *   nand:/path       vWii NAND (SLCCMPT)           (protected: needs system access, Konami code to change anything)
+ *   slc:/path        Wii U NAND (SLC)              (protected, with an extra warning: needs system access)
  * Each drive is reached through its Cafe OS mount point ("fs:/vol/...") via the
  * FSA devoptab, or through a Mocha devoptab when the app lacks permission, so the
  * normal stdio calls work on it. */
@@ -17,7 +18,7 @@
 #define USB_SLOTS 8
 
 enum { DEV_SD, DEV_USB0, DEV_USB1, DEV_USB2, DEV_USB3, DEV_USB4, DEV_USB5, DEV_USB6, DEV_USB7,
-       DEV_MLC, DEV_NAND, DEV_COUNT };
+       DEV_MLC, DEV_NAND, DEV_SLC, DEV_COUNT };
 
 #define VFS_PATH_MAX 512
 #define VFS_NAME_MAX 256
@@ -60,7 +61,7 @@ void vfs_remount(void);                 /* re-detect SD / USB / internal storage
 void vfs_update_space(int dev);
 
 int  vfs_dev_of(const char *path);      /* -1 if unknown */
-bool vfs_is_protected(int dev);         /* MLC / NAND: changing anything asks for the Konami code */
+bool vfs_is_protected(int dev);         /* MLC / NANDs: changing anything asks for the Konami code */
 bool vfs_is_archive(const char *path);  /* inside an archive: "sd:/a.wad|/x" */
 bool vfs_is_readonly(const char *path); /* archives are read-only */
 const char *vfs_dev_root(int dev);      /* "sd:/" */

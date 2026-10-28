@@ -24,14 +24,15 @@ vfs_dev g_devs[DEV_COUNT] = {
     { "usb7:", "usb7:/", "USB Drive 7",      "USB7", false, false, false, 0, 0 },
     { "usb8:", "usb8:/", "USB Drive 8",      "USB8", false, false, false, 0, 0 },
     { "mlc:",  "mlc:/",  "Wii U Storage (MLC)", "MLC",  true,  false, false, 0, 0 },
-    { "nand:", "nand:/", "vWii NAND (SLC)",  "NAND", true,  false, false, 0, 0 },
+    { "nand:", "nand:/", "vWii NAND (SLCCMPT)", "NAND", true,  false, false, 0, 0 },
+    { "slc:",  "slc:/",  "Wii U NAND (SLC)", "SLC",  true,  false, false, 0, 0 },
 };
 
 const char *g_write_err;
 static FSAClientHandle fsa_client;
 static bool fsa_ready;
 static bool mocha_ready;
-static char mocha_name[DEV_COUNT][16];  /* the Mocha devoptab a drive is reached through, if any */
+static char mocha_name[DEV_COUNT][32];  /* the Mocha devoptab a drive is reached through, if any */
 
 /* ---------------------------------------------------------------- paths */
 
@@ -45,7 +46,7 @@ int vfs_dev_of(const char *path)
 
 bool vfs_is_protected(int dev)
 {
-    return dev == DEV_MLC || dev == DEV_NAND;
+    return dev == DEV_MLC || dev == DEV_NAND || dev == DEV_SLC;
 }
 
 bool vfs_is_archive(const char *path)
@@ -192,23 +193,31 @@ static void mount_sd(void)
 
 /* An app may lack permission for a system volume. Aroma's Mocha can then reach it through an
  * unlocked client, as a devoptab named after the volume. */
-static bool attach_vol(int dev, const char *vol)
+static bool mocha_try(const char *vol, const char *devpath)
+{
+    char mnt[32], root[32];
+    snprintf(mnt, sizeof(mnt), "/vol/%s", vol);
+    snprintf(root, sizeof(root), "%s:/", vol);
+    if (Mocha_MountFS(vol, devpath, mnt) != MOCHA_RESULT_SUCCESS)
+        return false;
+    /* Mocha registers the devoptab even when nothing is mounted there. */
+    if (dir_exists(root))
+        return true;
+    Mocha_UnmountFS(vol);
+    return false;
+}
+
+/* devpath mounts the volume when nothing has yet; Cafe OS leaves both NANDs unmounted. */
+static bool attach_vol(int dev, const char *vol, const char *devpath)
 {
     vfs_dev *d = &g_devs[dev];
     snprintf(d->real, sizeof(d->real), "fs:/vol/%s", vol);
     if (dir_exists(d->real))
         return true;
-    char mnt[32], root[32];
-    snprintf(mnt, sizeof(mnt), "/vol/%s", vol);
-    snprintf(root, sizeof(root), "%s:/", vol);
-    if (mocha_ready && Mocha_MountFS(vol, NULL, mnt) == MOCHA_RESULT_SUCCESS) {
-        /* Mocha registers the devoptab even when nothing is mounted there. */
-        if (dir_exists(root)) {
-            snprintf(mocha_name[dev], sizeof(mocha_name[dev]), "%s", vol);
-            snprintf(d->real, sizeof(d->real), "%s:", vol);
-            return true;
-        }
-        Mocha_UnmountFS(vol);
+    if (mocha_ready && (mocha_try(vol, NULL) || (devpath && mocha_try(vol, devpath)))) {
+        snprintf(mocha_name[dev], sizeof(mocha_name[dev]), "%s", vol);
+        snprintf(d->real, sizeof(d->real), "%s:", vol);
+        return true;
     }
     d->real[0] = '\0';
     return false;
@@ -229,7 +238,7 @@ static void mount_usb(void)
     for (int i = 0; i < USB_SLOTS; i++) {
         char vol[16];
         snprintf(vol, sizeof(vol), "storage_usb%02d", i + 1);
-        g_devs[DEV_USB0 + i].mounted = attach_vol(DEV_USB0 + i, vol);
+        g_devs[DEV_USB0 + i].mounted = attach_vol(DEV_USB0 + i, vol, NULL);
         g_devs[DEV_USB0 + i].note[0] = '\0';
     }
 }
@@ -237,17 +246,19 @@ static void mount_usb(void)
 static void mount_internal(void)
 {
     vfs_dev *mlc = &g_devs[DEV_MLC];
-    mlc->mounted = attach_vol(DEV_MLC, "storage_mlc01");
+    mlc->mounted = attach_vol(DEV_MLC, "storage_mlc01", NULL);
     if (!mlc->mounted)
         snprintf(mlc->note, sizeof(mlc->note), "not accessible");
 
     vfs_dev *nand = &g_devs[DEV_NAND];
-    nand->real[0] = '\0';
-    nand->mounted = dir_exists("fs:/vol/slc01");
-    if (nand->mounted)
-        snprintf(nand->real, sizeof(nand->real), "fs:/vol/slc01");
-    else
+    nand->mounted = attach_vol(DEV_NAND, "storage_slccmpt01", "/dev/slccmpt01");
+    if (!nand->mounted)
         snprintf(nand->note, sizeof(nand->note), "needs system access (Aroma / Mocha)");
+
+    vfs_dev *slc = &g_devs[DEV_SLC];
+    slc->mounted = attach_vol(DEV_SLC, "storage_slc01", "/dev/slc01");
+    if (!slc->mounted)
+        snprintf(slc->note, sizeof(slc->note), "needs system access (Aroma / Mocha)");
 }
 
 static void fsa_start(void)
