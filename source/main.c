@@ -18,7 +18,7 @@
 #include "ftp.h"
 
 /* The same title IDs WHBProcInit treats as the Homebrew Launcher. */
-static bool launched_from_hbl(void)
+bool launched_from_hbl(void)
 {
     uint64_t id = OSGetTitleID();
     return id == 0x0005000013374842ULL || id == 0x000500101004A000ULL ||

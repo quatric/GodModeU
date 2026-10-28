@@ -807,7 +807,7 @@ static bool system_menu(void)
         items[n] = "FTP install server (archives to SD)";  code[n++] = M_FTP_SD;
         items[n] = "FTP install server (archives to USB)"; code[n++] = M_FTP_USB;
         items[n] = "About / credits";                      code[n++] = M_ABOUT;
-        items[n] = "Exit to Homebrew Launcher";            code[n++] = M_LOADER;
+        if (launched_from_hbl()) { items[n] = "Exit to Homebrew Launcher"; code[n++] = M_LOADER; }
         items[n] = "Exit to Wii U Menu";                   code[n++] = M_WIIMENU;
 
         int r = ui_menu_ex("SYSTEM", items, NULL, n, 0, "A Select   B Back   HOME Exit");
