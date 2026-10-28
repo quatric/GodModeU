@@ -72,6 +72,20 @@ static u32 map_pro(u32 b)
     return out;
 }
 
+static u32 map_kpad(const KPADStatus *ks, bool down)
+{
+    /* the Pro Controller reports through its own bits, not the Wii Remote's */
+    if (ks->extensionType == WPAD_EXT_PRO_CONTROLLER)
+        return map_pro(down ? ks->pro.trigger : ks->pro.hold);
+    u32 out = (down ? ks->trigger : ks->hold) & WIIMOTE_BUTTONS;
+    if (ks->extensionType == WPAD_EXT_CLASSIC)
+        out |= map_classic(down ? ks->classic.trigger : ks->classic.hold);
+    return out;
+}
+
+/* A read right after another finds no new sample, so the last held buttons are kept for it. */
+static u32 vpad_hold, kpad_hold[WPAD_CHAN_3 + 1];
+
 /* Every connected controller, edge (down) or level (held). */
 static u32 read_pads(bool down)
 {
@@ -80,24 +94,30 @@ static u32 read_pads(bool down)
         VPADStatus st;
         VPADReadError err = VPAD_READ_SUCCESS;
         VPADRead(VPAD_CHAN_0, &st, 1, &err);
-        if (err == VPAD_READ_SUCCESS)
-            out |= map_vpad(down ? st.trigger : st.hold);
+        if (err == VPAD_READ_SUCCESS) {
+            vpad_hold = map_vpad(st.hold);
+            if (down)
+                out |= map_vpad(st.trigger);
+        } else if (err != VPAD_READ_NO_SAMPLES) {
+            vpad_hold = 0;
+        }
+        if (!down)
+            out |= vpad_hold;
     }
     if (kpad_ready) {
         for (int chan = WPAD_CHAN_0; chan <= WPAD_CHAN_3; chan++) {
             KPADStatus ks;
             KPADError err = KPAD_ERROR_OK;
-            /* Skip unless a sample was written: ks is left unset otherwise. */
-            if (KPADReadEx(chan, &ks, 1, &err) == 0 || err != KPAD_ERROR_OK)
-                continue;
-            if (ks.extensionType == WPAD_EXT_PRO_CONTROLLER) {
-                /* the Pro Controller reports through its own bits, not the Wii Remote's */
-                out |= map_pro(down ? ks.pro.trigger : ks.pro.hold);
-                continue;
+            /* ks is only set when a sample was written. */
+            if (KPADReadEx(chan, &ks, 1, &err) > 0 && err == KPAD_ERROR_OK) {
+                kpad_hold[chan] = map_kpad(&ks, false);
+                if (down)
+                    out |= map_kpad(&ks, true);
+            } else if (err != KPAD_ERROR_NO_SAMPLES && err != KPAD_ERROR_OK) {
+                kpad_hold[chan] = 0;
             }
-            out |= (down ? ks.trigger : ks.hold) & WIIMOTE_BUTTONS;
-            if (ks.extensionType == WPAD_EXT_CLASSIC)
-                out |= map_classic(down ? ks.classic.trigger : ks.classic.hold);
+            if (!down)
+                out |= kpad_hold[chan];
         }
     }
     return out;
