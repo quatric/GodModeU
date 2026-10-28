@@ -234,6 +234,14 @@ static u32 mix(u32 bg, u32 fg, u32 v)
     return out;
 }
 
+/* OSScreen's g, p, y, ... reach a few pixels past the bottom of their row. */
+#define DESCENDER 3
+
+static bool plain_cell(int r, int c)
+{
+    return (cell_bg[r][c] >= 8 || cell_bg[r][c] == C_BLACK) && (cell_fg[r][c] & 7) == C_WHITE;
+}
+
 /* Blending by brightness keeps the font's anti-aliased edges in every color. */
 static void color_cells(void)
 {
@@ -249,8 +257,7 @@ static void color_cells(void)
             int end = c + 1;
             while (end < g_cols && cell_bg[r][end] == bg && cell_fg[r][end] == fg)
                 end++;
-            bool plain = (bg >= 8 || bg == C_BLACK) && (fg & 7) == C_WHITE;
-            if (!plain) {
+            if (!plain_cell(r, c)) {
                 u32 b = bg < 8 ? BG_RGBA[bg] >> 8 : 0, f = FG_RGB[fg & 15];
                 int x0 = FONT_X0 + c * CELL_W, x1 = FONT_X0 + end * CELL_W;
                 for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++) {
@@ -258,6 +265,18 @@ static void color_cells(void)
                     for (int x = x0; x < x1; x++)
                         line[x] = mix(b, f, line[x] >> 24);
                     DCFlushRange(line + x0, (x1 - x0) * 4);
+                }
+                /* Tails that hang into plain text below would stay white otherwise. */
+                for (int col = c; (fg & 7) != C_WHITE && r + 1 < g_rows && col < end; col++) {
+                    if (!plain_cell(r + 1, col))
+                        continue;
+                    int cx = FONT_X0 + col * CELL_W;
+                    for (int y = FONT_Y0 + (r + 1) * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H + DESCENDER; y++) {
+                        u32 *line = buf + y * pitch;
+                        for (int x = cx; x < cx + CELL_W; x++)
+                            line[x] = mix(0, f, line[x] >> 24);
+                        DCFlushRange(line + cx, CELL_W * 4);
+                    }
                 }
             }
             c = end;
