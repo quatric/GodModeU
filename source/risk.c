@@ -48,9 +48,13 @@ static void draw_gate(const char *title, const char *const *lines, int n, int pr
 
     int left = (cols - 10 * 5) / 2;
     ui_goto(r, left);
+    /* OSScreen text is white only, so entered steps get a green background. */
     for (int i = 0; i < 10; i++) {
-        ui_color(i < progress ? C_GREEN : C_WHITE, i < progress);
-        ui_printf("[%s] ", KONAMI_GLYPH[i]);
+        if (i < progress)
+            ui_bg(C_GREEN);
+        ui_printf("[%s]", KONAMI_GLYPH[i]);
+        ui_reset();
+        ui_putc(' ');
     }
     ui_reset();
     ui_color(C_CYAN, true);
