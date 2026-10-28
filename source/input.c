@@ -86,7 +86,9 @@ static u32 read_pads(bool down)
     if (kpad_ready) {
         for (int chan = WPAD_CHAN_0; chan <= WPAD_CHAN_3; chan++) {
             KPADStatus ks;
-            if (KPADRead(chan, &ks, 1) != KPAD_ERROR_OK)
+            KPADError err = KPAD_ERROR_OK;
+            /* Skip unless a sample was written: ks is left unset otherwise. */
+            if (KPADReadEx(chan, &ks, 1, &err) == 0 || err != KPAD_ERROR_OK)
                 continue;
             if (ks.extensionType == WPAD_EXT_PRO_CONTROLLER) {
                 /* the Pro Controller reports through its own bits, not the Wii Remote's */
