@@ -35,6 +35,8 @@ void ui_present(void);
 void ui_message(const char *title, int color, const char *text);
 /* Several pages of text; L / R (or - / +) flip between them, A closes. */
 void ui_message_pages(const char *title, int color, const char *const *pages, int n);
+/* While on, dialog windows get a red body instead of blue (problem summaries). */
+void ui_alert_window(bool on);
 bool ui_confirm(const char *title, int color, const char *text);
 #define UI_MENU_HOME (-2)      /* HOME pressed inside a menu (B / cancel is -1) */
 int  ui_menu(const char *title, const char **items, const bool *enabled, int n, int start);
