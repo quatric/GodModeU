@@ -137,13 +137,23 @@ static void reload_keep(void)
 
 /* ---------------------------------------------------------------- drawing */
 
+/* The drive list warns while any drive is unlocked; inside a drive, only that drive counts. */
+static bool here_risky(void)
+{
+    if (!cwd[0])
+        return risk_any_unlocked();
+    int dev = vfs_dev_of(cwd);
+    return vfs_is_protected(dev) && risk_dev_unlocked(dev);
+}
+
 static void draw_header(void)
 {
     int cols = ui_cols();
     char left[64], right[48];
+    bool risky = here_risky();
     snprintf(left, sizeof(left), " GodModeU v%s", GMW_VERSION);
-    snprintf(right, sizeof(right), "%s ", risk_any_unlocked() ? "[ RISKY MODE ON ]" : "[ SAFE MODE ]");
-    ui_bg(risk_any_unlocked() ? C_RED : C_BLUE);
+    snprintf(right, sizeof(right), "%s ", risky ? "[ RISKY MODE ON ]" : "[ SAFE MODE ]");
+    ui_bg(risky ? C_RED : C_BLUE);
     ui_color(C_WHITE, true);
     int gap = cols - 1 - (int)strlen(left) - (int)strlen(right);
     if (gap < 1) gap = 1;
