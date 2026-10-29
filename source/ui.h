@@ -23,6 +23,7 @@ void ui_puts(const char *s);
 void ui_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* Prints exactly `width` columns at row/col (truncated or padded). */
+void ui_ascii(char *dst, size_t n, const char *src);
 void ui_field(int row, int col, int width, const char *fmt, ...);
 void ui_fill(int row, int col, int width, char c);
 void ui_bar(int row, int col, int width, int pct, int color);
