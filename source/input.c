@@ -24,10 +24,11 @@ static bool kpad_ready;
 static u32 map_vpad(u32 b)
 {
     u32 out = 0;
-    if (b & VPAD_BUTTON_UP)    out |= BTN_UP;
-    if (b & VPAD_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & VPAD_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & VPAD_BUTTON_RIGHT) out |= BTN_RIGHT;
+    /* The left stick moves like the D-Pad. */
+    if (b & (VPAD_BUTTON_UP | VPAD_STICK_L_EMULATION_UP))       out |= BTN_UP;
+    if (b & (VPAD_BUTTON_DOWN | VPAD_STICK_L_EMULATION_DOWN))   out |= BTN_DOWN;
+    if (b & (VPAD_BUTTON_LEFT | VPAD_STICK_L_EMULATION_LEFT))   out |= BTN_LEFT;
+    if (b & (VPAD_BUTTON_RIGHT | VPAD_STICK_L_EMULATION_RIGHT)) out |= BTN_RIGHT;
     if (b & VPAD_BUTTON_A)     out |= BTN_A;
     if (b & VPAD_BUTTON_B)     out |= BTN_B;
     if (b & VPAD_BUTTON_X)     out |= BTN_2;
@@ -41,10 +42,10 @@ static u32 map_vpad(u32 b)
 static u32 map_classic(u32 b)
 {
     u32 out = 0;
-    if (b & WPAD_CLASSIC_BUTTON_UP)    out |= BTN_UP;
-    if (b & WPAD_CLASSIC_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & WPAD_CLASSIC_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & WPAD_CLASSIC_BUTTON_RIGHT) out |= BTN_RIGHT;
+    if (b & (WPAD_CLASSIC_BUTTON_UP | WPAD_CLASSIC_STICK_L_EMULATION_UP))       out |= BTN_UP;
+    if (b & (WPAD_CLASSIC_BUTTON_DOWN | WPAD_CLASSIC_STICK_L_EMULATION_DOWN))   out |= BTN_DOWN;
+    if (b & (WPAD_CLASSIC_BUTTON_LEFT | WPAD_CLASSIC_STICK_L_EMULATION_LEFT))   out |= BTN_LEFT;
+    if (b & (WPAD_CLASSIC_BUTTON_RIGHT | WPAD_CLASSIC_STICK_L_EMULATION_RIGHT)) out |= BTN_RIGHT;
     if (b & WPAD_CLASSIC_BUTTON_A)     out |= BTN_A;
     if (b & WPAD_CLASSIC_BUTTON_B)     out |= BTN_B;
     if (b & WPAD_CLASSIC_BUTTON_X)     out |= BTN_2;
@@ -58,10 +59,10 @@ static u32 map_classic(u32 b)
 static u32 map_pro(u32 b)
 {
     u32 out = 0;
-    if (b & WPAD_PRO_BUTTON_UP)    out |= BTN_UP;
-    if (b & WPAD_PRO_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & WPAD_PRO_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & WPAD_PRO_BUTTON_RIGHT) out |= BTN_RIGHT;
+    if (b & (WPAD_PRO_BUTTON_UP | WPAD_PRO_STICK_L_EMULATION_UP))       out |= BTN_UP;
+    if (b & (WPAD_PRO_BUTTON_DOWN | WPAD_PRO_STICK_L_EMULATION_DOWN))   out |= BTN_DOWN;
+    if (b & (WPAD_PRO_BUTTON_LEFT | WPAD_PRO_STICK_L_EMULATION_LEFT))   out |= BTN_LEFT;
+    if (b & (WPAD_PRO_BUTTON_RIGHT | WPAD_PRO_STICK_L_EMULATION_RIGHT)) out |= BTN_RIGHT;
     if (b & WPAD_PRO_BUTTON_A)     out |= BTN_A;
     if (b & WPAD_PRO_BUTTON_B)     out |= BTN_B;
     if (b & WPAD_PRO_BUTTON_X)     out |= BTN_2;
