@@ -46,6 +46,9 @@ jobs:
       - name: Build libdvm
         run: ./scripts/build_libdvm.sh
 
+      - name: Build libntfs
+        run: ./scripts/build_libntfs.sh
+
       - name: Build
         run: make
 

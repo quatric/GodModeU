@@ -14,6 +14,7 @@
 #include "arcfs.h"
 #include "risk.h"
 #include "usbfat.h"
+#include "usbntfs.h"
 #include <sys/statvfs.h>
 
 vfs_dev g_devs[DEV_COUNT] = {
@@ -226,7 +227,7 @@ static bool attach_vol(int dev, const char *vol, const char *devpath)
     return false;
 }
 
-static bool usbfat_on[USB_SLOTS];
+static bool usbfat_on[USB_SLOTS], usbntfs_on[USB_SLOTS];
 
 static void detach_all(void)
 {
@@ -241,6 +242,10 @@ static void detach_all(void)
         if (usbfat_on[i])
             usbfat_unmount(name);
         usbfat_on[i] = false;
+        snprintf(name, sizeof(name), "usbntfs%d", i + 1);
+        if (usbntfs_on[i])
+            usbntfs_unmount(i, name);
+        usbntfs_on[i] = false;
     }
 }
 
@@ -254,6 +259,7 @@ static void mount_usb(void)
         d->mounted = attach_vol(DEV_USB0 + i, vol, NULL);
         d->note[0] = '\0';
         d->fat = false;
+        d->always_show = false;
         /* Only a slot Cafe OS didn't mount as WFS is opened raw. */
         bool exfat;
         char name[16];
@@ -264,6 +270,17 @@ static void mount_usb(void)
             d->fat = !exfat;
             snprintf(d->real, sizeof(d->real), "%s:", name);
             snprintf(d->note, sizeof(d->note), "%s", exfat ? "exFAT" : "FAT32");
+        }
+        snprintf(name, sizeof(name), "usbntfs%d", i + 1);
+        int nt = !d->mounted && fsa_ready && mocha_ready ? usbntfs_mount(fsa_client, i, name) : USBNTFS_NONE;
+        if (nt == USBNTFS_MOUNTED) {
+            usbntfs_on[i] = true;
+            d->mounted = true;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            snprintf(d->note, sizeof(d->note), "NTFS");
+        } else if (nt != USBNTFS_NONE) {
+            d->always_show = true;
+            snprintf(d->note, sizeof(d->note), "%s", nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
         }
     }
 }
@@ -303,7 +320,7 @@ void vfs_update_space(int dev)
     d->space_known = false;
     if (!d->mounted)
         return;
-    if (dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS && usbfat_on[dev - DEV_USB0]) {
+    if (dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS && (usbfat_on[dev - DEV_USB0] || usbntfs_on[dev - DEV_USB0])) {
         char root[24];
         struct statvfs sv;
         snprintf(root, sizeof(root), "%s/", d->real);
