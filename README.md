@@ -24,7 +24,7 @@ the protected storage.
 ## Status
 
 Tested on a real Wii U with Aroma: the drives below (SD, a WFS USB drive, FAT32, NTFS and ext4 USB drives, MLC and both NANDs),
-copying, the GamePad, the FTP server, Export Miis and Save Wii U keys. It builds with devkitPPC and
+copying, the GamePad, a Wii Remote, the FTP server, Export Miis and Save Wii U keys. It builds with devkitPPC and
 [wut](https://github.com/devkitPro/wut) (wut 1.9.1, the version in devkitPro's package index). What hasn't been tried on a console
 yet is listed under [Not yet tested](#not-yet-tested). Reports from real hardware are very welcome.
 
