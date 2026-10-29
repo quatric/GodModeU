@@ -109,7 +109,8 @@ These depend on the Wii's IOS, the Wii's hardware or the vWii, and have no equiv
 SYSTEM → *FTP server (read-only)* or *(read/write)* opens a status screen with the address, the user name (`godmode`) and a
 fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, `/slc`, ...).
 
-* **Login is always required**; the password is random per run. Failed logins are throttled and a burst of them locks the server for a minute.
+* **Login is required by default**; the password is random per run. Failed logins are throttled and a burst of them locks the server for a minute.
+  **Y / 1** on the server screen switches login off for that run (no user name or password; anyone on your network can connect) and back on.
 * **LAN only**: peers outside private / link-local ranges are refused.
 * **No FTP bounce / hijack**: `PORT` must point back at the client (port >= 1024) and passive data connections must come from the client's IP.
 * **Sandboxed paths**: every path is canonicalised inside the virtual root.
