@@ -24,6 +24,9 @@ SRC="$WORK/libntfs/source"
 sed -i -E 's/->(readSectors|writeSectors)\(((fd|cache)->)?(interface|disc), ?/->\1(/' "$SRC"/*.c
 sed -i -E 's/->(startup|isInserted|shutdown)\(interface\)/->\1()/' "$SRC"/*.c
 sed -i -E 's/[a-z]+->(interface|disc)->flush\([a-z]+->(interface|disc)\)/true/' "$SRC"/*.c
+# Its lock is taken again inside locked sections (stat closes its entry under the lock), so it must be recursive.
+sed -i 's/LWP_MutexInit(&vd->lock, false)/LWP_MutexInit(\&vd->lock, true)/' "$SRC"/ntfsinternal.c
+grep -q 'LWP_MutexInit(&vd->lock, true)' "$SRC"/ntfsinternal.c || { echo "volume lock not made recursive" >&2; exit 1; }
 if grep -nE '->(readSectors|writeSectors|startup|isInserted|shutdown|flush)\(((fd|cache)->)?(interface|disc) ?[,)]|->flush\(' "$SRC"/*.c; then
     echo "libogc2-style disc calls left over" >&2
     exit 1
