@@ -55,7 +55,6 @@ static void draw_gate(const char *title, const char *const *lines, int n, int pr
     for (int i = 0; i < 10; i++)
         width += (int)strlen(KONAMI_GLYPH[i]) + 3;
     ui_goto(r, (cols - width) / 2);
-    /* Entered steps light up green. */
     for (int i = 0; i < 10; i++) {
         ui_reset();
         if (i < progress)

@@ -24,7 +24,6 @@ static bool kpad_ready;
 static u32 map_vpad(u32 b)
 {
     u32 out = 0;
-    /* The left stick moves like the D-Pad. */
     if (b & (VPAD_BUTTON_UP | VPAD_STICK_L_EMULATION_UP))       out |= BTN_UP;
     if (b & (VPAD_BUTTON_DOWN | VPAD_STICK_L_EMULATION_DOWN))   out |= BTN_DOWN;
     if (b & (VPAD_BUTTON_LEFT | VPAD_STICK_L_EMULATION_LEFT))   out |= BTN_LEFT;
