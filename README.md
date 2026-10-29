@@ -23,17 +23,20 @@ the protected storage.
 
 ## Status
 
-**Not yet tested on a real Wii U or in an emulator.** The project builds with devkitPPC and
-[wut](https://github.com/devkitPro/wut) (wut 1.9.1, the version in devkitPro's package index), but every part that talks to
-the console has only been checked by reading the wut headers. Expect fixes. The points most likely to need them are
-listed under [Unverified assumptions](#unverified-assumptions). Reports from real hardware are very welcome.
+Tested on a real Wii U with Aroma: the drives below (SD, a WFS USB drive, FAT32, NTFS and ext4 USB drives, MLC and both NANDs),
+copying, the GamePad, the FTP server, Export Miis and Save Wii U keys. It builds with devkitPPC and
+[wut](https://github.com/devkitPro/wut) (wut 1.9.1, the version in devkitPro's package index). What hasn't been tried on a console
+yet is listed under [Not yet tested](#not-yet-tested). Reports from real hardware are very welcome.
+
+USB drives that aren't Wii U-formatted, both NANDs and parts of the internal storage are reached through **Aroma's Mocha**,
+so they need Aroma.
 
 ## Drives
 
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up, and FAT32 / exFAT / NTFS drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only), plus ext2 / ext3 / ext4 (Linux) drives, read-only. An NTFS drive Windows didn't shut down fully (Fast Startup, hibernation) is left alone. Plug a FAT32 / exFAT drive in while GodModeU is running and pick *Remount drives*: the Wii U Menu offers to format drives it doesn't know |
+| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up, and FAT32 / exFAT / NTFS drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only), plus ext2 / ext3 / ext4 (Linux) drives, read-only. An NTFS drive Windows didn't shut down fully (Fast Startup, hibernation) is left alone. Plug a drive the Wii U didn't format in while GodModeU is running and pick *Remount drives*: the Wii U Menu offers to format drives it doesn't know |
 | Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
 | vWii NAND (SLCCMPT) | `nand:/` | the vWii's NAND: System Menu, IOS, Wii channels and saves. Protected: Konami code to change anything. Mounted through Aroma's Mocha |
 | Wii U NAND (SLC) | `slc:/` | the Wii U's own system NAND. Protected: Konami code, plus a red warning the first time you change it in a session, because a mistake there can stop the Wii U from booting at all. Mounted through Aroma's Mocha |
@@ -114,6 +117,7 @@ These depend on the Wii's IOS, the Wii's hardware or the vWii, and have no equiv
 SYSTEM → *FTP server (read-only)* or *(read/write)* opens a status screen with the address, the user name (`godmode`) and a
 fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, `/slc`, ...).
 
+* It listens on port 21, or on **2121** when Aroma's ftpiiu already answers on 21.
 * **Login is required by default**; the password is random per run. Failed logins are throttled and a burst of them locks the server for a minute.
   **Y / 1** on the server screen switches login off for that run (no user name or password; anyone on your network can connect) and back on.
 * **LAN only**: peers outside private / link-local ranges are refused.
@@ -126,23 +130,21 @@ fresh random password. Connect with any FTP client; every drive shows up as a fo
 Supported commands: `LIST`, `NLST`, `MLSD`, `RETR` (with `REST`), `STOR`, `DELE`, `MKD`, `RMD`, `RNFR` / `RNTO`, `SIZE`,
 `PASV`, `EPSV`, `PORT`.
 
-## Unverified assumptions
+## Not yet tested
 
-These are the things I could not check without a console or an emulator. Each one is a single constant or a short function,
-so they're easy to change once they've been tried:
-
-* **Mount points**: `/vol/storage_usb01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/dev/slccmpt01` at `/vol/storage_slccmpt01` for the vWii NAND and `/dev/slc01` at `/vol/storage_slc01` for the Wii U NAND. The SD
-  card uses whatever `WHBGetSdCardMountPath()` returns (`source/vfs.c`).
-* **Colours**: OSScreen text is white only, so colours only tint backgrounds (highlight bars). Text colours are ignored.
-* **Networking**: the IP comes from `ACGetAssignedAddress`, and the FTP server runs on the BSD sockets from wut's `nsysnet`.
 * **Archive readers** are the same code as GodModeWii and were only checked against generated samples on a PC.
-  The WFS reader was never tested against a real Wii U drive.
+  The WFS image reader was never tried on a dump of a real Wii U drive.
+* exFAT USB drives, more than one non-WFS USB drive at once, and starting with only a Pro Controller.
+
+The console font is ASCII only, so accented letters show without their accents and other characters as `?`; the files keep
+their real names.
 
 ## Installation
 
 Build the app (below), then copy the result to the SD card:
 
-* **Aroma** (or any launcher that runs `.wuhb` files): copy `GodModeU.wuhb` to `sd:/wiiu/apps/`.
+* **Aroma** (or any launcher that runs `.wuhb` files): copy `GodModeU.wuhb` to `sd:/wiiu/apps/`. Aroma is needed for USB drives
+  the Wii U didn't format and for both NANDs (see [Status](#status)).
 * **Homebrew Launcher**: copy the `GodModeU` folder from the release zip (`GodModeU.rpx`, `meta.xml`, `icon.png`)
   to `sd:/wiiu/apps/GodModeU/`.
 
@@ -153,7 +155,10 @@ You need [devkitPro](https://devkitpro.org/) with devkitPPC and the wut toolchai
 ```sh
 dkp-pacman -S wut wut-tools
 export DEVKITPRO=/opt/devkitpro
-./scripts/build_libmocha.sh   # once: builds libmocha into ./portlibs/mocha
+./scripts/build_libmocha.sh   # once each: libmocha, libdvm (FAT32 / exFAT), libntfs and lwext4 (ext2/3/4) into ./portlibs
+./scripts/build_libdvm.sh
+./scripts/build_libntfs.sh
+./scripts/build_libext4.sh
 make
 ```
 

@@ -29,7 +29,8 @@ LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP)
 
 # whb (the helper library), coreinit, vpad, padscore, nsysnet, nn::ac and the
 # FSA devoptab all live in libwut. libmocha (C++, so it needs libstdc++) comes from scripts/build_libmocha.sh,
-# libdvm (FAT32 / exFAT USB drives) from scripts/build_libdvm.sh, libntfs (NTFS) from scripts/build_libntfs.sh.
+# libdvm (FAT32 / exFAT USB drives) from scripts/build_libdvm.sh, libntfs (NTFS) from scripts/build_libntfs.sh,
+# lwext4 (ext2/3/4) from scripts/build_libext4.sh.
 LIBS	:=	-lext4 -lntfs -ldvm -lmocha -lstdc++ -lwut -lm
 LIBDIRS	:=	$(WUT_ROOT)
 
