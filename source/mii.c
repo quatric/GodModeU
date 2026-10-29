@@ -42,6 +42,7 @@ typedef struct {
     u8 data[MAX_REC];
     char name[32];       /* for the screen: ASCII */
     char file[64];       /* for the file name: UTF-8, with unsafe characters replaced */
+    char ascii[32];      /* the same in plain ASCII, for the SD card (see export) */
     char creator[32];
     bool marked;
 } mii_t;
@@ -50,10 +51,13 @@ static mii_t *miis;
 static int nmiis;
 static const mii_db *db;
 
+enum { NAME_SCREEN, NAME_FILE, NAME_ASCII };
+
 /* Nintendo's private-use glyphs (hearts, symbols) and anything a FAT name can't hold become '_';
- * the screen gets '?' for whatever OSScreen's font can't draw. */
-static void utf16_name(const u8 *be, char *out, size_t sz, bool for_file)
+ * the screen gets '?' for whatever OSScreen's font can't draw, NAME_ASCII '_' for any non-ASCII. */
+static void utf16_name(const u8 *be, char *out, size_t sz, int mode)
 {
+    bool for_file = mode != NAME_SCREEN;
     size_t o = 0;
     for (int i = 0; i < 10; i++) {
         unsigned c = be[i * 2] << 8 | be[i * 2 + 1];
@@ -65,8 +69,10 @@ static void utf16_name(const u8 *be, char *out, size_t sz, bool for_file)
             buf[n++] = for_file ? '_' : '?';
         else if (c < 0x80)
             buf[n++] = (char)c;
-        else if (!for_file)
+        else if (mode == NAME_SCREEN)
             buf[n++] = '?';
+        else if (mode == NAME_ASCII)
+            buf[n++] = '_';
         else if (c < 0x800) {
             buf[n++] = (char)(0xC0 | c >> 6);
             buf[n++] = (char)(0x80 | (c & 0x3F));
@@ -131,11 +137,14 @@ static bool load(const mii_db *which)
             continue;
         mii_t *m = &miis[nmiis++];
         memcpy(m->data, r, which->rec_size);
-        utf16_name(r + which->name_off, m->name, sizeof(m->name), false);
-        utf16_name(r + which->name_off, m->file, sizeof(m->file), true);
-        utf16_name(r + which->creator_off, m->creator, sizeof(m->creator), false);
+        utf16_name(r + which->name_off, m->name, sizeof(m->name), NAME_SCREEN);
+        utf16_name(r + which->name_off, m->file, sizeof(m->file), NAME_FILE);
+        utf16_name(r + which->name_off, m->ascii, sizeof(m->ascii), NAME_ASCII);
+        utf16_name(r + which->creator_off, m->creator, sizeof(m->creator), NAME_SCREEN);
         if (!m->file[0])
             snprintf(m->file, sizeof(m->file), "Mii %03d", i + 1);
+        if (!strpbrk(m->ascii, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"))
+            snprintf(m->ascii, sizeof(m->ascii), "Mii %03d", i + 1);
         if (!m->name[0])
             snprintf(m->name, sizeof(m->name), "(no name)");
     }
@@ -272,6 +281,9 @@ static void export(int dev, int only)
         vfs_file f;
         path[0] = '\0';
         bool good = unique_path(path, sizeof(path), dir, miis[i].file) && vfs_open_write(&f, path);
+        /* The Wii U's own SD driver refuses some names FatFs takes; plain ASCII always works. */
+        if (!good && strcmp(miis[i].file, miis[i].ascii))
+            good = unique_path(path, sizeof(path), dir, miis[i].ascii) && vfs_open_write(&f, path);
         if (good) {
             good = vfs_write(&f, src, len) == len;
             good = vfs_close_checked(&f) && good;
