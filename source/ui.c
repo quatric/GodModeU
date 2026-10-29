@@ -236,52 +236,62 @@ static u32 mix(u32 bg, u32 fg, u32 v)
 
 /* OSScreen's g, p, y, ... reach a few pixels past the bottom of their row. */
 #define DESCENDER 3
+/* A colored background stops this far short of the glyphs' top and bottom, so rows don't run together. */
+#define BAR_TRIM  1
 
 static bool plain_cell(int r, int c)
 {
     return (cell_bg[r][c] >= 8 || cell_bg[r][c] == C_BLACK) && (cell_fg[r][c] & 7) == C_WHITE;
 }
 
-/* Blending by brightness keeps the font's anti-aliased edges in every color. */
+/* Highlight bars outrank other backgrounds, which outrank black. */
+static int bg_rank(u8 bg)
+{
+    return bg == C_CYAN ? 2 : bg < 8 && bg != C_BLACK ? 1 : 0;
+}
+
+/* Whether a cell's colors reach DESCENDER pixels into the row below, over its tails. */
+static bool reaches_down(int r, int c)
+{
+    return !plain_cell(r, c) && (r + 1 >= g_rows || bg_rank(cell_bg[r][c]) >= bg_rank(cell_bg[r + 1][c]));
+}
+
+/* The background a neighbouring row shows behind this cell's trimmed edge. */
+static u32 bg_behind(int r, int c)
+{
+    return r >= 0 && r < g_rows && cell_bg[r][c] < 8 ? BG_RGBA[cell_bg[r][c]] >> 8 : 0;
+}
+
+/* Blending by brightness keeps the font's anti-aliased edges in every color. Each pixel is blended
+ * once: where the row above reaches down, this row starts lower. */
 static void color_cells(void)
 {
     int pitch;
     u32 *buf = back_buffer(SCREEN_TV, &pitch);
     if (!buf)
         return;
-    DCFlushRange(buf + FONT_Y0 * pitch, g_rows * CELL_H * pitch * 4);
+    int bytes = (g_rows * CELL_H + DESCENDER) * pitch * 4;
+    DCFlushRange(buf + FONT_Y0 * pitch, bytes);
     for (int r = 0; r < g_rows; r++) {
-        int c = 0;
-        while (c < g_cols) {
+        for (int c = 0; c < g_cols; c++) {
+            if (plain_cell(r, c))
+                continue;
             u8 bg = cell_bg[r][c], fg = cell_fg[r][c];
-            int end = c + 1;
-            while (end < g_cols && cell_bg[r][end] == bg && cell_fg[r][end] == fg)
-                end++;
-            if (!plain_cell(r, c)) {
-                u32 b = bg < 8 ? BG_RGBA[bg] >> 8 : 0, f = FG_RGB[fg & 15];
-                int x0 = FONT_X0 + c * CELL_W, x1 = FONT_X0 + end * CELL_W;
-                for (int y = FONT_Y0 + r * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H; y++) {
-                    u32 *line = buf + y * pitch;
-                    for (int x = x0; x < x1; x++)
-                        line[x] = mix(b, f, line[x] >> 24);
-                    DCFlushRange(line + x0, (x1 - x0) * 4);
-                }
-                /* Tails that hang into plain text below would stay white otherwise. */
-                for (int col = c; (fg & 7) != C_WHITE && r + 1 < g_rows && col < end; col++) {
-                    if (!plain_cell(r + 1, col))
-                        continue;
-                    int cx = FONT_X0 + col * CELL_W;
-                    for (int y = FONT_Y0 + (r + 1) * CELL_H; y < FONT_Y0 + (r + 1) * CELL_H + DESCENDER; y++) {
-                        u32 *line = buf + y * pitch;
-                        for (int x = cx; x < cx + CELL_W; x++)
-                            line[x] = mix(0, f, line[x] >> 24);
-                        DCFlushRange(line + cx, CELL_W * 4);
-                    }
-                }
+            u32 b = bg < 8 ? BG_RGBA[bg] >> 8 : 0, f = FG_RGB[fg & 15];
+            int top = FONT_Y0 + r * CELL_H, x0 = FONT_X0 + c * CELL_W;
+            int y0 = top + (r > 0 && reaches_down(r - 1, c) ? DESCENDER : 0);
+            int y1 = top + CELL_H + (reaches_down(r, c) ? DESCENDER : 0);
+            for (int y = y0; y < y1; y++) {
+                u32 *line = buf + y * pitch;
+                u32 by = r > 0 && y < top + BAR_TRIM                   ? bg_behind(r - 1, c)
+                         : y >= top + CELL_H + DESCENDER - BAR_TRIM ? bg_behind(r + 1, c)
+                         : b;
+                for (int x = x0; x < x0 + CELL_W; x++)
+                    line[x] = mix(by, f, line[x] >> 24);
             }
-            c = end;
         }
     }
+    DCFlushRange(buf + FONT_Y0 * pitch, bytes);
 }
 
 static u32 blend(u32 a, u32 b, u32 c, u32 d, u32 wa, u32 wb, u32 wc, u32 wd)
