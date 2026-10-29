@@ -127,6 +127,14 @@ static bool find_ext(RawDisc *d, u8 *buf, u32 *start)
     return false;
 }
 
+/* Like blkid: ext4 if it uses anything ext3 can't read, ext3 if it has a journal. */
+static int ext_version(const u8 *sb)
+{
+    if ((rd32le(sb + 0x60) & ~0x16u) || (rd32le(sb + 0x64) & ~0x7u))
+        return 4;
+    return rd32le(sb + 0x5C) & 0x4 ? 3 : 2;
+}
+
 /* Finds the volume the way FatFs does (VBR at sector 0, else GPT basic data, else MBR), from GodModeWii. */
 static int volume_type(RawDisc *d, u8 *buf)
 {
@@ -188,9 +196,11 @@ int usbfat_mount(FSAClientHandle client, int slot, const char *name)
     d->base.num_sectors = ~(sec_t)0;
     /* FatFs mounts lazily and would accept anything, so only drives with a FAT or exFAT volume go on. */
     u32 start = 0;
-    int type = volume_type(d, d->bounce);
-    if (type == VOL_NONE && find_ext(d, d->bounce, &start))
+    int type = volume_type(d, d->bounce), ext = 0;
+    if (type == VOL_NONE && find_ext(d, d->bounce, &start)) {
         type = VOL_EXT;
+        ext = ext_version(d->bounce);
+    }
     if (type == VOL_NONE) {
         raw_destroy(&d->base);
         return USBFAT_NONE;
@@ -213,7 +223,7 @@ int usbfat_mount(FSAClientHandle client, int slot, const char *name)
     DIR *dir = opendir(root);
     if (dir) {
         closedir(dir);
-        return type == VOL_EXT ? USBFAT_EXT : type == VOL_EXFAT ? USBFAT_EXFAT : USBFAT_FAT;
+        return type == VOL_EXT ? USBFAT_EXT2 + ext - 2 : type == VOL_EXFAT ? USBFAT_EXFAT : USBFAT_FAT;
     }
     dvmUnmountVolume(name);
     return USBFAT_NONE;

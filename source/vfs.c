@@ -270,9 +270,12 @@ static void mount_usb(void)
             usbfat_on[i] = true;
             d->mounted = true;
             d->fat = fs == USBFAT_FAT;
-            d->readonly = fs == USBFAT_EXT;
+            d->readonly = fs >= USBFAT_EXT2;
             snprintf(d->real, sizeof(d->real), "%s:", name);
-            snprintf(d->note, sizeof(d->note), "%s", fs == USBFAT_EXT ? "ext  read-only" : fs == USBFAT_EXFAT ? "exFAT" : "FAT32");
+            if (fs >= USBFAT_EXT2)
+                snprintf(d->note, sizeof(d->note), "ext%d  read-only", fs - USBFAT_EXT2 + 2);
+            else
+                snprintf(d->note, sizeof(d->note), "%s", fs == USBFAT_EXFAT ? "exFAT" : "FAT32");
         }
         snprintf(name, sizeof(name), "usbntfs%d", i + 1);
         int nt = !d->mounted && fsa_ready && mocha_ready ? usbntfs_mount(fsa_client, i, name) : USBNTFS_NONE;
