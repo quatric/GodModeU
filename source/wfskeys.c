@@ -36,8 +36,10 @@ void wfskeys_save(void)
     static WiiUConsoleOTP otp;
     static u8 seeprom[0x200];
     u8 usb[16], mlc[16];
-    bool read = Mocha_ReadOTP(&otp) == MOCHA_RESULT_SUCCESS &&
-                Mocha_SEEPROMRead(seeprom, 0, sizeof(seeprom)) == MOCHA_RESULT_SUCCESS;
+    MochaUtilsStatus os = Mocha_ReadOTP(&otp);
+    /* Mocha_SEEPROMRead returns the number of bytes read, not MOCHA_RESULT_SUCCESS. */
+    MochaUtilsStatus ss = os == MOCHA_RESULT_SUCCESS ? Mocha_SEEPROMRead(seeprom, 0, sizeof(seeprom)) : os;
+    bool read = os == MOCHA_RESULT_SUCCESS && ss >= 0;
     if (read) {
         /* The same derivation GodModeWii applies to a full otp.bin / seeprom.bin. */
         memcpy(mlc, otp.wiiUBank.mlcKey, 16);
@@ -46,7 +48,10 @@ void wfskeys_save(void)
     memset(&otp, 0, sizeof(otp));
     memset(seeprom, 0, sizeof(seeprom));
     if (!read) {
-        ui_message("SAVE WII U KEYS", C_RED, "Couldn't read the console's keys. This needs Aroma with Mocha.");
+        char msg[160];
+        snprintf(msg, sizeof(msg), "Couldn't read the console's %s (%s). This needs Aroma with Mocha.",
+                 os != MOCHA_RESULT_SUCCESS ? "OTP" : "SEEPROM", Mocha_GetStatusStr(os != MOCHA_RESULT_SUCCESS ? os : ss));
+        ui_message("SAVE WII U KEYS", C_RED, msg);
         return;
     }
 
