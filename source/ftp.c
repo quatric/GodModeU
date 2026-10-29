@@ -151,9 +151,10 @@ static void set_nonblock(s32 s)
     fcntl(s, F_SETFL, O_NONBLOCK);
 }
 
+/* wut's sockets return -1 and set errno; libogc's, which this server started on, return -errno. */
 static bool would_block(s32 r)
 {
-    return r == -EAGAIN || r == -EINPROGRESS || r == -EALREADY;
+    return r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS || errno == EALREADY);
 }
 
 static s32 make_listener(int port)
@@ -406,7 +407,7 @@ static void begin_data(sess_t *s, int op, const char *real)
         }
         set_nonblock(s->ds);
         s32 r = connect(s->ds, (struct sockaddr *)&s->port_addr, sizeof(s->port_addr));
-        if (r < 0 && !would_block(r) && r != -EISCONN) {
+        if (r < 0 && !would_block(r) && errno != EISCONN) {
             reply(s, "425 Can't open data connection");
             transfer_cleanup(s, true);
             return;
