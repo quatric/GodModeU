@@ -177,6 +177,23 @@ static s32 make_listener(int port)
     return s;
 }
 
+/* Aroma's ftpiiu runs inside this same process, so binding its port 21 again succeeds while
+ * clients still reach ftpiiu. Knocking first shows whether something already answers. */
+static bool port_taken(u32 ip, int port)
+{
+    s32 s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0)
+        return false;
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof(a));
+    a.sin_family = AF_INET;
+    a.sin_port = htons(port);
+    a.sin_addr.s_addr = ip;
+    bool taken = connect(s, (struct sockaddr *)&a, sizeof(a)) == 0;
+    close(s);
+    return taken;
+}
+
 /* Only RFC1918 / link-local peers may talk to the server. */
 static bool lan_peer(u32 ip_net)
 {
@@ -1209,9 +1226,9 @@ bool ftp_run(bool read_write, int install_mode)
         return false;
     }
 
-    g_port = FTP_PORT;
+    g_port = port_taken(ip, FTP_PORT) ? FTP_PORT_ALT : FTP_PORT;
     listener = make_listener(g_port);
-    if (listener < 0) {
+    if (listener < 0 && g_port == FTP_PORT) {
         g_port = FTP_PORT_ALT;
         listener = make_listener(g_port);
     }
