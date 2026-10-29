@@ -1150,7 +1150,7 @@ static void draw(u32 ip)
 {
     int cols = ui_cols(), rows = ui_rows();
     ui_clear();
-    ui_bg(risk_any_unlocked() ? C_RED : C_BLUE);
+    ui_bg(C_GREEN);
     ui_color(C_WHITE, true);
     ui_field(0, 0, cols - 1, " GodModeU v%s  -  FTP SERVER", GMW_VERSION);
     ui_reset();
