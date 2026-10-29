@@ -849,9 +849,10 @@ static bool system_menu(void)
             ftp_run(code[r] == M_FTP_RW, code[r] == M_FTP_SD ? FTP_INSTALL_SD : code[r] == M_FTP_USB ? FTP_INSTALL_USB : FTP_INSTALL_OFF);
             reload_keep_safe();
             return false;
-        case M_MIIS: mii_export(); return false;
-        case M_KEYS: wfskeys_save(); return false;
-        case M_ABOUT: show_credits(); return false;
+        /* These only show something, so B comes back to the SYSTEM menu. */
+        case M_MIIS: mii_export(); continue;
+        case M_KEYS: wfskeys_save(); continue;
+        case M_ABOUT: show_credits(); continue;
         case M_LOADER: exit_req = EXIT_LOADER; return true;
         default: exit_req = EXIT_MENU; return true;
         }
