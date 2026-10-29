@@ -13,6 +13,7 @@
 #include "risk.h"
 #include "ftp.h"
 #include "wfskeys.h"
+#include "mii.h"
 #include "arcfs.h"
 
 volatile bool g_quit_request;
@@ -807,10 +808,10 @@ static void reload_keep_safe(void)
 /* Returns true if the user wants to leave the program. */
 static bool system_menu(void)
 {
-    enum { M_LOCK, M_REMOUNT, M_FTP_RO, M_FTP_RW, M_FTP_SD, M_FTP_USB, M_KEYS, M_ABOUT, M_LOADER, M_WIIMENU };
+    enum { M_LOCK, M_REMOUNT, M_FTP_RO, M_FTP_RW, M_FTP_SD, M_FTP_USB, M_MIIS, M_KEYS, M_ABOUT, M_LOADER, M_WIIMENU };
     for (;;) {
-        const char *items[11];
-        int code[11];
+        const char *items[12];
+        int code[12];
         int n = 0;
         if (risk_any_unlocked() && !risk_forced()) { items[n] = "Lock risky options again"; code[n++] = M_LOCK; }
         items[n] = "Remount drives (SD / USB / internal)"; code[n++] = M_REMOUNT;
@@ -818,6 +819,7 @@ static bool system_menu(void)
         items[n] = "FTP server (read/write)";              code[n++] = M_FTP_RW;
         items[n] = "FTP install server (archives to SD)";  code[n++] = M_FTP_SD;
         items[n] = "FTP install server (archives to USB)"; code[n++] = M_FTP_USB;
+        items[n] = "Export Miis";                          code[n++] = M_MIIS;
         items[n] = "Save Wii U keys for GodModeWii";       code[n++] = M_KEYS;
         items[n] = "About / credits";                      code[n++] = M_ABOUT;
         if (launched_from_hbl()) { items[n] = "Exit to Homebrew Launcher"; code[n++] = M_LOADER; }
@@ -847,6 +849,7 @@ static bool system_menu(void)
             ftp_run(code[r] == M_FTP_RW, code[r] == M_FTP_SD ? FTP_INSTALL_SD : code[r] == M_FTP_USB ? FTP_INSTALL_USB : FTP_INSTALL_OFF);
             reload_keep_safe();
             return false;
+        case M_MIIS: mii_export(); return false;
         case M_KEYS: wfskeys_save(); return false;
         case M_ABOUT: show_credits(); return false;
         case M_LOADER: exit_req = EXIT_LOADER; return true;

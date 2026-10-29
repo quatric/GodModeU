@@ -57,6 +57,11 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
   off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code, except the
   Wii U NAND's own warning, once per session.
 * Konami-code gate (asked once per drive, when you first try to change it) and brick warnings.
+* **Export Miis** (SYSTEM menu): pick Miis by name and save them to the SD card or a USB drive in `/savemiis/`.
+  Wii U Miis become `<Name>.ffsd` (the format Mii Studio loaders and other PC Mii tools read); **L / -** switches to the
+  vWii's Miis, saved as `<Name>.miigx` like SaveGame Manager GX does. The Mii databases are only read.
+* **Save Wii U keys for GodModeWii** (SYSTEM menu): writes this console's two WFS keys to `sd:/wfs/`, so GodModeWii can
+  read the Wii U drive from vWii. They're unique to your console: keep them private.
 * A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
   read-only unless you pick read / write, and protected storage still needs the Konami code on the console.
   Plain FTP, no TLS, so only use it on a network you trust.
