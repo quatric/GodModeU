@@ -624,7 +624,7 @@ static void do_paste(void)
 {
     if (!clip_n || !cwd[0]) return;
     if (vfs_is_readonly(cwd)) {
-        ui_message("READ-ONLY", C_YELLOW, "You can't paste into an archive.");
+        ui_message("READ-ONLY", C_YELLOW, "You can't paste here: this location is read-only.");
         return;
     }
     bool ok = ops_paste(clip, clip_n, clip_cut, cwd);
