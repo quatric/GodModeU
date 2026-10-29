@@ -13,6 +13,8 @@
 #include "vfs.h"
 #include "arcfs.h"
 #include "risk.h"
+#include "usbfat.h"
+#include <sys/statvfs.h>
 
 vfs_dev g_devs[DEV_COUNT] = {
     { "sd:",   "sd:/",   "SD Card",          "SD",   true,  false, false, 0, 0 },
@@ -224,12 +226,21 @@ static bool attach_vol(int dev, const char *vol, const char *devpath)
     return false;
 }
 
+static bool usbfat_on[USB_SLOTS];
+
 static void detach_all(void)
 {
     for (int i = 0; i < DEV_COUNT; i++) {
         if (mocha_name[i][0])
             Mocha_UnmountFS(mocha_name[i]);
         mocha_name[i][0] = '\0';
+    }
+    for (int i = 0; i < USB_SLOTS; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "usbfat%d", i + 1);
+        if (usbfat_on[i])
+            usbfat_unmount(name);
+        usbfat_on[i] = false;
     }
 }
 
@@ -238,9 +249,22 @@ static void mount_usb(void)
 {
     for (int i = 0; i < USB_SLOTS; i++) {
         char vol[16];
+        vfs_dev *d = &g_devs[DEV_USB0 + i];
         snprintf(vol, sizeof(vol), "storage_usb%02d", i + 1);
-        g_devs[DEV_USB0 + i].mounted = attach_vol(DEV_USB0 + i, vol, NULL);
-        g_devs[DEV_USB0 + i].note[0] = '\0';
+        d->mounted = attach_vol(DEV_USB0 + i, vol, NULL);
+        d->note[0] = '\0';
+        d->fat = false;
+        /* Only a slot Cafe OS didn't mount as WFS is opened raw. */
+        bool exfat;
+        char name[16];
+        snprintf(name, sizeof(name), "usbfat%d", i + 1);
+        if (!d->mounted && fsa_ready && mocha_ready && usbfat_mount(fsa_client, i, name, &exfat)) {
+            usbfat_on[i] = true;
+            d->mounted = true;
+            d->fat = !exfat;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            snprintf(d->note, sizeof(d->note), "%s", exfat ? "exFAT" : "FAT32");
+        }
     }
 }
 
@@ -277,7 +301,20 @@ void vfs_update_space(int dev)
 {
     vfs_dev *d = &g_devs[dev];
     d->space_known = false;
-    if (!d->mounted || !fsa_ready)
+    if (!d->mounted)
+        return;
+    if (dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS && usbfat_on[dev - DEV_USB0]) {
+        char root[24];
+        struct statvfs sv;
+        snprintf(root, sizeof(root), "%s/", d->real);
+        if (statvfs(root, &sv) != 0)
+            return;
+        d->total = (u64)sv.f_blocks * sv.f_frsize;
+        d->free = (u64)sv.f_bfree * sv.f_frsize;
+        d->space_known = d->total > 0;
+        return;
+    }
+    if (!fsa_ready)
         return;
     char buf[VFS_PATH_MAX];
     const char *fp = fsa_path(d->real, buf, sizeof(buf));

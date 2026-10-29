@@ -33,7 +33,7 @@ listed under [Unverified assumptions](#unverified-assumptions). Reports from rea
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up. FAT32 and exFAT USB drives aren't mounted by the system, so they don't show up yet |
+| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up, and FAT32 / exFAT drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only). Plug a FAT32 / exFAT drive in while GodModeU is running and pick *Remount drives*: the Wii U Menu offers to format drives it doesn't know |
 | Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
 | vWii NAND (SLCCMPT) | `nand:/` | the vWii's NAND: System Menu, IOS, Wii channels and saves. Protected: Konami code to change anything. Mounted through Aroma's Mocha |
 | Wii U NAND (SLC) | `slc:/` | the Wii U's own system NAND. Protected: Konami code, plus a red warning the first time you change it in a session, because a mistake there can stop the Wii U from booting at all. Mounted through Aroma's Mocha |
@@ -171,5 +171,6 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **vffmod** (wii-tools): the VFF layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
 * **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive, internal storage and both NANDs through Aroma's Mocha when the app isn't allowed to by itself.
+* **[libdvm](https://github.com/devkitPro/libdvm)** by fincs / devkitPro (ZPL-2.1) with **[FatFs](https://github.com/devkitPro/fatfs-mod)** by ChaN: FAT32 and exFAT USB drives, built with exFAT on by `scripts/build_libdvm.sh`.
 * **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.
 * **GodModeWii** (quatric): the code this port starts from.

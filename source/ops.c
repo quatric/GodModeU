@@ -36,11 +36,11 @@ static struct {
 
 static u64 now_ms(void) { return OSTicksToMilliseconds(OSGetSystemTime()); }
 
-/* Only the SD card is FAT, with its 4 GiB file size limit; USB drives are WFS. */
+/* The SD card and FAT32 USB drives have FAT's 4 GiB file size limit; WFS and exFAT drives don't. */
 static bool fat_volume(const char *path)
 {
     int d = vfs_dev_of(path);
-    return d == DEV_SD;
+    return d == DEV_SD || (d >= 0 && g_devs[d].fat);
 }
 
 static void fail(const char *what, const char *path)
