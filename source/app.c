@@ -336,7 +336,8 @@ static void draw_home(void)
         else ui_color(d->mounted ? C_WHITE : C_RED, d->mounted);
         char note[56] = "";
         if (d->mounted && vfs_is_protected(devs[idx]))
-            snprintf(note, sizeof(note), "%s", risk_dev_unlocked(devs[idx]) ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
+            snprintf(note, sizeof(note), "%s",
+                     risk_dev_unlocked(devs[idx]) ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
         else if (d->note[0])
             snprintf(note, sizeof(note), "%s", d->note);
         else if (!d->mounted)

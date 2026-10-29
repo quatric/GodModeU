@@ -65,7 +65,8 @@ static void time_left(char *out, size_t n, u64 el_ms)
         return;
     u64 sec = (total - done) / rate;
     if (sec >= 3600)
-        snprintf(out, n, "Time left: %u:%02u:%02u", (unsigned)(sec / 3600), (unsigned)(sec / 60 % 60), (unsigned)(sec % 60));
+        snprintf(out, n, "Time left: %u:%02u:%02u",
+                 (unsigned)(sec / 3600), (unsigned)(sec / 60 % 60), (unsigned)(sec % 60));
     else
         snprintf(out, n, "Time left: %u:%02u", (unsigned)(sec / 60), (unsigned)(sec % 60));
 }

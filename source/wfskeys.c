@@ -50,7 +50,8 @@ void wfskeys_save(void)
     if (!read) {
         char msg[160];
         snprintf(msg, sizeof(msg), "Couldn't read the console's %s (%s). This needs Aroma with Mocha.",
-                 os != MOCHA_RESULT_SUCCESS ? "OTP" : "SEEPROM", Mocha_GetStatusStr(os != MOCHA_RESULT_SUCCESS ? os : ss));
+                 os != MOCHA_RESULT_SUCCESS ? "OTP" : "SEEPROM",
+                 Mocha_GetStatusStr(os != MOCHA_RESULT_SUCCESS ? os : ss));
         ui_message("SAVE WII U KEYS", C_RED, msg);
         return;
     }

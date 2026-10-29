@@ -286,7 +286,8 @@ static void mount_usb(void)
             snprintf(d->note, sizeof(d->note), "NTFS");
         } else if (nt != USBNTFS_NONE) {
             d->always_show = true;
-            snprintf(d->note, sizeof(d->note), "%s", nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
+            snprintf(d->note, sizeof(d->note), "%s",
+                     nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
         }
     }
 }

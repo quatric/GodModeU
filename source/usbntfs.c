@@ -54,7 +54,8 @@ static bool raw_io(int i, uint32_t first, uint32_t n, u8 *p, bool write)
     static bool rd_##I(uint32_t s, uint32_t n, void *b) { return raw_io(I, s, n, b, false); }          \
     static bool wr_##I(uint32_t s, uint32_t n, const void *b) { return raw_io(I, s, n, (u8 *)b, true); } \
     static bool ok_##I(void) { return true; }
-SLOT_IFACE(0) SLOT_IFACE(1) SLOT_IFACE(2) SLOT_IFACE(3) SLOT_IFACE(4) SLOT_IFACE(5) SLOT_IFACE(6) SLOT_IFACE(7)
+SLOT_IFACE(0) SLOT_IFACE(1) SLOT_IFACE(2) SLOT_IFACE(3)
+SLOT_IFACE(4) SLOT_IFACE(5) SLOT_IFACE(6) SLOT_IFACE(7)
 
 #define SLOT_ENTRY(I) { DEVICE_TYPE_WII_U_USB, FEATURE_MEDIUM_CANREAD | FEATURE_MEDIUM_CANWRITE | FEATURE_WII_U_USB, \
                         on_##I, on_##I, rd_##I, wr_##I, ok_##I, ok_##I }

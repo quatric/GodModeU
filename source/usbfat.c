@@ -90,7 +90,8 @@ static bool ext_at(RawDisc *d, u8 *buf, u32 start)
     return raw_io(d, buf, start + 2, 1, false) && buf[0x38] == 0x53 && buf[0x39] == 0xEF;
 }
 
-/* The first sector of an ext volume: at sector 0, an MBR type 0x83 partition, or a GPT "Linux filesystem" one. */
+/* The first sector of an ext volume: at sector 0, an MBR type 0x83 partition, or a GPT
+ * "Linux filesystem" one. */
 static bool find_ext(RawDisc *d, u8 *buf, u32 *start)
 {
     static const u8 gpt_linux[16] = { 0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47,
