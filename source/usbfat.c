@@ -10,6 +10,7 @@
 #include <dirent.h>
 #include <mocha/fsa.h>
 #include <dvm.h>
+#include <ext2.h>
 
 #include "usbfat.h"
 #include "gmu_types.h"
@@ -81,7 +82,50 @@ static u32 rd32le(const u8 *p)
     return p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24;
 }
 
-enum { VOL_NONE, VOL_FAT, VOL_EXFAT };
+enum { VOL_NONE, VOL_FAT, VOL_EXFAT, VOL_EXT };
+
+/* An ext2/3/4 superblock 1024 bytes into the volume. */
+static bool ext_at(RawDisc *d, u8 *buf, u32 start)
+{
+    return raw_io(d, buf, start + 2, 1, false) && buf[0x38] == 0x53 && buf[0x39] == 0xEF;
+}
+
+/* The first sector of an ext volume: at sector 0, an MBR type 0x83 partition, or a GPT "Linux filesystem" one. */
+static bool find_ext(RawDisc *d, u8 *buf, u32 *start)
+{
+    static const u8 gpt_linux[16] = { 0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47,
+                                      0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4 };
+    u32 cand[128];
+    int n = 0;
+    if (ext_at(d, buf, 0)) {
+        *start = 0;
+        return true;
+    }
+    if (!raw_io(d, buf, 0, 1, false) || buf[510] != 0x55 || buf[511] != 0xAA)
+        return false;
+    if (buf[0x1C2] == 0xEE) {
+        if (!raw_io(d, buf, 1, 1, false) || memcmp(buf, "EFI PART", 8))
+            return false;
+        u32 table = rd32le(buf + 72), count = rd32le(buf + 80);
+        for (u32 i = 0; i < count && i < 128; i++) {
+            if (i % 4 == 0 && !raw_io(d, buf, table + i / 4, 1, false))
+                break;
+            const u8 *e = buf + i % 4 * 128;
+            if (!memcmp(e, gpt_linux, 16))
+                cand[n++] = rd32le(e + 32);
+        }
+    } else {
+        for (int i = 0; i < 4; i++)
+            if (buf[0x1C2 + i * 16] == 0x83)
+                cand[n++] = rd32le(buf + 0x1C6 + i * 16);
+    }
+    for (int i = 0; i < n; i++)
+        if (cand[i] && ext_at(d, buf, cand[i])) {
+            *start = cand[i];
+            return true;
+        }
+    return false;
+}
 
 /* Finds the volume the way FatFs does (VBR at sector 0, else GPT basic data, else MBR), from GodModeWii. */
 static int volume_type(RawDisc *d, u8 *buf)
@@ -124,7 +168,7 @@ static int volume_type(RawDisc *d, u8 *buf)
     return VOL_NONE;
 }
 
-bool usbfat_mount(FSAClientHandle client, int slot, const char *name, bool *exfat)
+int usbfat_mount(FSAClientHandle client, int slot, const char *name)
 {
     char dev[24];
     snprintf(dev, sizeof(dev), "/dev/usb%02d", slot + 1);
@@ -135,7 +179,7 @@ bool usbfat_mount(FSAClientHandle client, int slot, const char *name, bool *exfa
     if (!d->bounce || FSAEx_RawOpenEx(client, dev, &d->handle) < 0) {
         free(d->bounce);
         free(d);
-        return false;
+        return USBFAT_NONE;
     }
     d->client = client;
     d->base.vt = &raw_iface;
@@ -143,28 +187,36 @@ bool usbfat_mount(FSAClientHandle client, int slot, const char *name, bool *exfa
     d->base.sector_shift = 9;
     d->base.num_sectors = ~(sec_t)0;
     /* FatFs mounts lazily and would accept anything, so only drives with a FAT or exFAT volume go on. */
+    u32 start = 0;
     int type = volume_type(d, d->bounce);
+    if (type == VOL_NONE && find_ext(d, d->bounce, &start))
+        type = VOL_EXT;
     if (type == VOL_NONE) {
         raw_destroy(&d->base);
-        return false;
+        return USBFAT_NONE;
     }
-    *exfat = type == VOL_EXFAT;
+    static bool ext_registered;
+    if (type == VOL_EXT && !ext_registered)
+        ext_registered = dvmRegisterFsDriver(&g_ext2FsDriver);
+    /* ext is read-only: the disc refuses writes, and the driver mounts without journal replay. */
+    if (type == VOL_EXT)
+        d->base.features &= ~FEATURE_MEDIUM_CANWRITE;
 
     /* The cache takes over the raw disc and destroys it with the volume. */
     DvmDisc *disc = dvmDiscCacheCreate(&d->base, 8, 64);
-    if (!dvmMountVolume(name, disc, 0, "vfat")) {
+    if (!dvmMountVolume(name, disc, start, type == VOL_EXT ? "ext2" : "vfat")) {
         disc->vt->destroy(disc);
-        return false;
+        return USBFAT_NONE;
     }
     char root[24];
     snprintf(root, sizeof(root), "%s:/", name);
     DIR *dir = opendir(root);
     if (dir) {
         closedir(dir);
-        return true;
+        return type == VOL_EXT ? USBFAT_EXT : type == VOL_EXFAT ? USBFAT_EXFAT : USBFAT_FAT;
     }
     dvmUnmountVolume(name);
-    return false;
+    return USBFAT_NONE;
 }
 
 void usbfat_unmount(const char *name)

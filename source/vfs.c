@@ -60,7 +60,8 @@ bool vfs_is_archive(const char *path)
 
 bool vfs_is_readonly(const char *path)
 {
-    return arcfs_is_path(path);
+    int dev = vfs_dev_of(path);
+    return arcfs_is_path(path) || (dev >= 0 && g_devs[dev].readonly);
 }
 
 const char *vfs_dev_root(int dev)
@@ -259,17 +260,19 @@ static void mount_usb(void)
         d->mounted = attach_vol(DEV_USB0 + i, vol, NULL);
         d->note[0] = '\0';
         d->fat = false;
+        d->readonly = false;
         d->always_show = false;
         /* Only a slot Cafe OS didn't mount as WFS is opened raw. */
-        bool exfat;
         char name[16];
         snprintf(name, sizeof(name), "usbfat%d", i + 1);
-        if (!d->mounted && fsa_ready && mocha_ready && usbfat_mount(fsa_client, i, name, &exfat)) {
+        int fs = !d->mounted && fsa_ready && mocha_ready ? usbfat_mount(fsa_client, i, name) : USBFAT_NONE;
+        if (fs != USBFAT_NONE) {
             usbfat_on[i] = true;
             d->mounted = true;
-            d->fat = !exfat;
+            d->fat = fs == USBFAT_FAT;
+            d->readonly = fs == USBFAT_EXT;
             snprintf(d->real, sizeof(d->real), "%s:", name);
-            snprintf(d->note, sizeof(d->note), "%s", exfat ? "exFAT" : "FAT32");
+            snprintf(d->note, sizeof(d->note), "%s", fs == USBFAT_EXT ? "ext  read-only" : fs == USBFAT_EXFAT ? "exFAT" : "FAT32");
         }
         snprintf(name, sizeof(name), "usbntfs%d", i + 1);
         int nt = !d->mounted && fsa_ready && mocha_ready ? usbntfs_mount(fsa_client, i, name) : USBNTFS_NONE;
@@ -519,7 +522,12 @@ bool vfs_exists(const char *path)
 /* Callers ask for the Konami code first; this keeps a locked drive unwritable even if one forgets. */
 static bool unlocked_for_write(const char *path)
 {
-    if (risk_dev_writable(vfs_dev_of(path)))
+    int dev = vfs_dev_of(path);
+    if (dev >= 0 && g_devs[dev].readonly) {
+        g_write_err = "Read-only drive (ext)";
+        return false;
+    }
+    if (risk_dev_writable(dev))
         return true;
     g_write_err = "Protected drive is locked (Konami code not entered)";
     return false;

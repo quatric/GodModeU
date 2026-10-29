@@ -33,7 +33,7 @@ listed under [Unverified assumptions](#unverified-assumptions). Reports from rea
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up, and FAT32 / exFAT / NTFS drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only). An NTFS drive Windows didn't shut down fully (Fast Startup, hibernation) is left alone. Plug a FAT32 / exFAT drive in while GodModeU is running and pick *Remount drives*: the Wii U Menu offers to format drives it doesn't know |
+| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts as `/vol/storage_usb01` and up, and FAT32 / exFAT / NTFS drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only), plus ext2 / ext3 / ext4 (Linux) drives, read-only. An NTFS drive Windows didn't shut down fully (Fast Startup, hibernation) is left alone. Plug a FAT32 / exFAT drive in while GodModeU is running and pick *Remount drives*: the Wii U Menu offers to format drives it doesn't know |
 | Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
 | vWii NAND (SLCCMPT) | `nand:/` | the vWii's NAND: System Menu, IOS, Wii channels and saves. Protected: Konami code to change anything. Mounted through Aroma's Mocha |
 | Wii U NAND (SLC) | `slc:/` | the Wii U's own system NAND. Protected: Konami code, plus a red warning the first time you change it in a session, because a mistake there can stop the Wii U from booting at all. Mounted through Aroma's Mocha |
@@ -176,6 +176,8 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **vffmod** (wii-tools): the VFF layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
 * **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive, internal storage and both NANDs through Aroma's Mocha when the app isn't allowed to by itself.
+* **[lwext4](https://github.com/gkostka/lwext4)** by Grzegorz Kostka (GPL-2.0 / BSD; Extrems' big-endian fork) with Extrems' libdvm
+  ext4 driver (ZPL-2.1), ported and made read-only by `scripts/build_libext4.sh` and `scripts/ext4_driver.patch`.
 * **[libntfs](https://github.com/extremscorner/libntfs)** by Extrems and contributors, on **NTFS-3G** by Tuxera and the NTFS-3G authors (GPL-2.0): NTFS USB drives, built by `scripts/build_libntfs.sh`.
 * **[libdvm](https://github.com/devkitPro/libdvm)** by fincs / devkitPro (ZPL-2.1) with **[FatFs](https://github.com/devkitPro/fatfs-mod)** by ChaN: FAT32 and exFAT USB drives, built with exFAT on by `scripts/build_libdvm.sh`.
 * **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.

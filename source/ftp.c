@@ -314,7 +314,7 @@ static bool to_real(const char *v, char *real, size_t sz, int *dev)
 /* Write permission with the same rules as the file browser. */
 static bool can_write(const char *real, int dev, const char **why)
 {
-    if (dev < 0)                        { *why = "Read-only location"; return false; }
+    if (dev < 0 || g_devs[dev].readonly) { *why = "Read-only location"; return false; }
     if (!g_rw)                          { *why = "Server is read-only"; return false; }
     if (vfs_is_protected(dev)) {
         /* The code is typed on the console itself; the FTP command waits. */
@@ -631,7 +631,7 @@ static void do_list(sess_t *s, int op, const char *arg)
             ents[0].size = size;
             n = 1;
         }
-        s->ro_list = !g_rw || !risk_dev_writable(dev);
+        s->ro_list = !g_rw || g_devs[dev].readonly || !risk_dev_writable(dev);
     }
     s->buf = malloc(IO_CHUNK);
     if (!s->buf) { free(ents); reply(s, "451 Out of memory"); return; }

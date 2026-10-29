@@ -30,7 +30,7 @@ LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP)
 # whb (the helper library), coreinit, vpad, padscore, nsysnet, nn::ac and the
 # FSA devoptab all live in libwut. libmocha (C++, so it needs libstdc++) comes from scripts/build_libmocha.sh,
 # libdvm (FAT32 / exFAT USB drives) from scripts/build_libdvm.sh, libntfs (NTFS) from scripts/build_libntfs.sh.
-LIBS	:=	-lntfs -ldvm -lmocha -lstdc++ -lwut -lm
+LIBS	:=	-lext4 -lntfs -ldvm -lmocha -lstdc++ -lwut -lm
 LIBDIRS	:=	$(WUT_ROOT)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -55,9 +55,10 @@ export INCLUDE	:=	$(foreach dir,$(INCLUDES), -iquote $(CURDIR)/$(dir)) \
 					-I$(WUT_ROOT)/include \
 					-I$(CURDIR)/portlibs/mocha/include \
 					-I$(CURDIR)/portlibs/dvm/include \
-					-I$(CURDIR)/portlibs/ntfs/include
+					-I$(CURDIR)/portlibs/ntfs/include \
+					-I$(CURDIR)/portlibs/ext4/include
 export LIBPATHS	:=	-L$(WUT_ROOT)/lib -L$(CURDIR)/portlibs/mocha/lib -L$(CURDIR)/portlibs/dvm/lib \
-					-L$(CURDIR)/portlibs/ntfs/lib
+					-L$(CURDIR)/portlibs/ntfs/lib -L$(CURDIR)/portlibs/ext4/lib
 export LDFLAGS	:=	$(LDFLAGS)
 
 .PHONY: $(BUILD) clean all

@@ -49,6 +49,9 @@ jobs:
       - name: Build libntfs
         run: ./scripts/build_libntfs.sh
 
+      - name: Build libext4
+        run: ./scripts/build_libext4.sh
+
       - name: Build
         run: make
 

@@ -51,6 +51,7 @@ typedef struct {
     char real[VFS_PATH_MAX];  /* "fs:/vol/..." or a Mocha devoptab, "storage_usb01:" (no trailing slash) */
     char note[48];
     bool fat;                 /* FAT32, with its 4 GiB file size limit */
+    bool readonly;            /* ext2/3/4: mounted read-only */
 } vfs_dev;
 
 extern vfs_dev g_devs[DEV_COUNT];
