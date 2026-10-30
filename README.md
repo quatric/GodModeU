@@ -1,5 +1,7 @@
 # GodModeU
 
+**By:** quatric & cmyksoda
+
 A text-mode, [GodMode9](https://github.com/d0k3/GodMode9)-style file manager for the **Wii U**, written as a native
 Cafe OS homebrew app. It's a port of [GodModeWii](https://github.com/quatric/GodModeWii), which targets the Wii (and
 the Wii U's vWii mode). No fancy GUI: a text grid on the TV, a cursor and a lot of power. Copy, cut, paste and delete
@@ -53,7 +55,7 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
   or the MLC) opens the same way; its keys are read from `sd:/wfs/` (see below).
 * Copy, cut, paste and delete between any two writable drives, folders included, with a progress screen,
   transfer speed, overwrite / skip prompts and **hold B to cancel**. Half-written files are removed again.
-* Multi-select, select all / invert, rename, new folder, folder size / info, a text viewer and a hex viewer.
+* Multi-select, select all / invert, rename, new folder, folder size / info, a text viewer and a hex viewer, plus in-app editors (Actions menu, Edit as text / Edit as hex) for files on writable drives: change bytes in place, or edit text a line at a time with the character roller. Files are edited in memory and only written when you save.
 * **Read-only FAT files and folders can be deleted.** Copy / move / delete summaries keep the result line (files, size, time)
   and let you page through every problem with **L / R** (**-** / **+**).
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
@@ -86,7 +88,7 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 | **A** | Open folder or archive / actions menu on any other file / paste on the green `Paste` row |
 | **B** | Go up one folder (back to the drive list at the top) |
 | **Y** | Mark / unmark the item and move down / clear the clipboard on the green `Paste` row |
-| **X** | Actions menu (paste, clear clipboard, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, selection tools) |
+| **X** | Actions menu (paste, clear clipboard, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, edit as text, edit as hex, selection tools) |
 | **+** | Copy the marked items (or the item under the cursor). **R** and **ZR** do the same |
 | **-** | Cut the marked items. **L** and **ZL** do the same |
 | **HOME** | SYSTEM menu: lock risky options again, remount drives, FTP server, credits, exit. Press HOME or B again to close it |
