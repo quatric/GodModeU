@@ -229,6 +229,7 @@ static bool attach_vol(int dev, const char *vol, const char *devpath)
 }
 
 static bool usbfat_on[USB_SLOTS], usbntfs_on[USB_SLOTS];
+static char usb_dev_name[USB_SLOTS][32];     /* "USB Drive N", or which drive a further partition is on */
 
 static void detach_all(void)
 {
@@ -258,6 +259,8 @@ static void mount_usb(void)
         vfs_dev *d = &g_devs[DEV_USB0 + i];
         snprintf(vol, sizeof(vol), "storage_usb%02d", i + 1);
         d->mounted = attach_vol(DEV_USB0 + i, vol, NULL);
+        snprintf(usb_dev_name[i], sizeof(usb_dev_name[i]), "USB Drive %d", i + 1);
+        d->name = usb_dev_name[i];
         d->note[0] = '\0';
         d->fat = false;
         d->readonly = false;
@@ -288,6 +291,61 @@ static void mount_usb(void)
             d->always_show = true;
             snprintf(d->note, sizeof(d->note), "%s",
                      nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
+        }
+    }
+}
+
+/* The first partition of a drive is the drive itself; every further FAT32 / exFAT / NTFS partition takes
+ * the next free usbN: entry, listed as "USB Drive 1, part. 2". */
+static void mount_usb_extras(void)
+{
+    for (int i = 0; i < USB_SLOTS; i++) {
+        if (!usbfat_on[i] && !usbntfs_on[i])
+            continue;
+        vfs_dev *main = &g_devs[DEV_USB0 + i];
+        if (main->readonly)
+            continue;                               /* ext: leave the rest alone */
+        usbfat_part parts[USBFAT_MAX_PARTS];
+        int n = usbfat_list_parts(fsa_client, i, parts, USBFAT_MAX_PARTS);
+        bool main_ntfs = usbntfs_on[i], skipped = false;
+        for (int p = 0; p < n; p++) {
+            /* the first partition of the main volume's kind is the one already mounted */
+            if (!skipped && (parts[p].kind == PART_NTFS) == main_ntfs) {
+                skipped = true;
+                continue;
+            }
+            int k = -1;
+            for (int j = i + 1; j < USB_SLOTS; j++) {
+                vfs_dev *c = &g_devs[DEV_USB0 + j];
+                if (!c->mounted && !c->always_show && !c->note[0]) {
+                    k = j;
+                    break;
+                }
+            }
+            if (k < 0)
+                return;
+            vfs_dev *d = &g_devs[DEV_USB0 + k];
+            char name[16];
+            bool ok;
+            if (parts[p].kind == PART_NTFS) {
+                snprintf(name, sizeof(name), "usbntfs%d", k + 1);
+                ok = usbntfs_mount_part(fsa_client, i, k, parts[p].start, name) == USBNTFS_MOUNTED;
+                usbntfs_on[k] = ok;
+            } else {
+                snprintf(name, sizeof(name), "usbfat%d", k + 1);
+                ok = usbfat_mount_part(fsa_client, i, parts[p].start, name);
+                usbfat_on[k] = ok;
+            }
+            if (!ok)
+                continue;
+            d->mounted = true;
+            d->fat = parts[p].kind == PART_FAT;
+            d->readonly = false;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            snprintf(usb_dev_name[k], sizeof(usb_dev_name[k]), "USB Drive %d, part. %d", i + 1, p + 1);
+            d->name = usb_dev_name[k];
+            snprintf(d->note, sizeof(d->note), "%s",
+                     parts[p].kind == PART_NTFS ? "NTFS" : parts[p].kind == PART_EXFAT ? "exFAT" : "FAT32");
         }
     }
 }
@@ -358,6 +416,7 @@ static void mount_all(void)
     detach_all();
     mount_sd();
     mount_usb();
+    mount_usb_extras();
     mount_internal();
     for (int i = 0; i < DEV_COUNT; i++)
         vfs_update_space(i);

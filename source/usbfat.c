@@ -234,3 +234,107 @@ void usbfat_unmount(const char *name)
 {
     dvmUnmountVolume(name);
 }
+
+static RawDisc *open_raw(FSAClientHandle client, int slot)
+{
+    char dev[24];
+    snprintf(dev, sizeof(dev), "/dev/usb%02d", slot + 1);
+    RawDisc *d = calloc(1, sizeof(*d));
+    if (!d)
+        return NULL;
+    d->bounce = memalign(DMA_ALIGN, MAX_IO * SECTOR);
+    if (!d->bounce || FSAEx_RawOpenEx(client, dev, &d->handle) < 0) {
+        free(d->bounce);
+        free(d);
+        return NULL;
+    }
+    d->client = client;
+    d->base.vt = &raw_iface;
+    d->base.features = FEATURE_MEDIUM_CANREAD | FEATURE_MEDIUM_CANWRITE;
+    d->base.sector_shift = 9;
+    d->base.num_sectors = ~(sec_t)0;
+    return d;
+}
+
+static int part_kind(RawDisc *d, u8 *buf, u32 start)
+{
+    if (!start || !raw_io(d, buf, start, 1, false))
+        return -1;
+    if (!memcmp(buf + 3, "NTFS    ", 8))
+        return PART_NTFS;
+    if (!memcmp(buf + 3, "EXFAT   ", 8))
+        return PART_EXFAT;
+    if (is_fat_vbr(buf))
+        return PART_FAT;
+    return -1;
+}
+
+int usbfat_list_parts(FSAClientHandle client, int slot, usbfat_part *out, int max)
+{
+    static const u8 gpt_basic_data[16] = { 0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44,
+                                           0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7 };
+    RawDisc *d = open_raw(client, slot);
+    u8 *buf = memalign(DMA_ALIGN, SECTOR), *tab = memalign(DMA_ALIGN, SECTOR);
+    int n = 0;
+    if (!d || !buf || !tab || !raw_io(d, tab, 0, 1, false) || tab[510] != 0x55 || tab[511] != 0xAA)
+        goto done;
+    if (part_kind(d, buf, 0) >= 0 || !memcmp(tab + 3, "NTFS    ", 8) || !memcmp(tab + 3, "EXFAT   ", 8))
+        goto done;                                   /* no partition table: a single volume */
+    if (tab[0x1C2] == 0xEE) {
+        if (!raw_io(d, buf, 1, 1, false) || memcmp(buf, "EFI PART", 8))
+            goto done;
+        u32 table = rd32le(buf + 72), count = rd32le(buf + 80);
+        for (u32 i = 0; i < count && i < 128 && n < max; i++) {
+            if (i % 4 == 0 && !raw_io(d, tab, table + i / 4, 1, false))
+                break;
+            const u8 *e = tab + i % 4 * 128;
+            if (memcmp(e, gpt_basic_data, 16))
+                continue;
+            u32 start = rd32le(e + 32);
+            int kind = part_kind(d, buf, start);
+            if (kind >= 0) {
+                out[n].start = start;
+                out[n++].kind = kind;
+            }
+        }
+    } else {
+        for (int i = 0; i < 4 && n < max; i++) {
+            u8 type = tab[0x1BE + i * 16 + 4];
+            if (!type || type == 0x05 || type == 0x0F || type == 0x85)
+                continue;
+            u32 start = rd32le(tab + 0x1C6 + i * 16);
+            int kind = part_kind(d, buf, start);
+            if (kind >= 0) {
+                out[n].start = start;
+                out[n++].kind = kind;
+            }
+        }
+    }
+done:
+    free(buf);
+    free(tab);
+    if (d)
+        raw_destroy(&d->base);
+    return n;
+}
+
+bool usbfat_mount_part(FSAClientHandle client, int slot, u32 start, const char *name)
+{
+    RawDisc *d = open_raw(client, slot);
+    if (!d)
+        return false;
+    DvmDisc *disc = dvmDiscCacheCreate(&d->base, 8, 64);
+    if (!dvmMountVolume(name, disc, start, "vfat")) {
+        disc->vt->destroy(disc);
+        return false;
+    }
+    char root[24];
+    snprintf(root, sizeof(root), "%s:/", name);
+    DIR *dir = opendir(root);
+    if (dir) {
+        closedir(dir);
+        return true;
+    }
+    dvmUnmountVolume(name);
+    return false;
+}

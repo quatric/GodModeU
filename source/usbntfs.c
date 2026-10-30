@@ -102,3 +102,24 @@ void usbntfs_unmount(int i, const char *name)
     ntfsUnmount(name, true);
     close_slot(i);
 }
+
+int usbntfs_mount_part(FSAClientHandle client, int drive, int i, unsigned start, const char *name)
+{
+    char dev[24];
+    snprintf(dev, sizeof(dev), "/dev/usb%02d", drive + 1);
+    if (!bounce)
+        bounce = memalign(DMA_ALIGN, MAX_IO * SECTOR);
+    if (!bounce || slot[i].open || FSAEx_RawOpenEx(client, dev, &slot[i].handle) < 0)
+        return USBNTFS_NONE;
+    slot[i].client = client;
+    slot[i].open = true;
+    errno = 0;
+    int result;
+    if (ntfsMount(name, &iface[i], start, 8, 64, NTFS_DEFAULT | NTFS_SHOW_HIDDEN_FILES))
+        result = USBNTFS_MOUNTED;
+    else
+        result = errno == EDIRTY ? USBNTFS_DIRTY : USBNTFS_FAILED;
+    if (result != USBNTFS_MOUNTED)
+        close_slot(i);
+    return result;
+}
