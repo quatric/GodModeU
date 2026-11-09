@@ -738,8 +738,20 @@ static void show_credits(void)
         "Igor Pavlov); RAR5 from the public format description.\n\n"
         "RVZ / WIA: written from Dolphin's format description; Zstandard (Meta), bzip2. LZO1X and Retro Studios PAK layouts match nintoolbox; "
         "lzop by Markus Oberhumer. WFS: wfslib and wfs-tools (koolkdev).",
+
+        "Interface sounds: MoonShell 2.10 (Moonlight; GPL v2 or later).\n\n"
+        "Thanks for using GodModeU!\n\n"
+        "Psst... feeling nostalgic? Right here, enter Start A Select 1 2 Select.",
     };
-    ui_message_pages("ABOUT / CREDITS", C_CYAN, pages, 4);
+    /* the easter egg: Start (+) A Select (-) 1 2 Select (-) on the last page switches TiVo mode
+     * (on the GamePad and Pro Controller, 1 is Y and 2 is X) */
+    static const u32 code[] = { WPAD_BUTTON_PLUS, WPAD_BUTTON_A, WPAD_BUTTON_MINUS, WPAD_BUTTON_1,
+                                WPAD_BUTTON_2, WPAD_BUTTON_MINUS };
+    int n = sizeof(pages) / sizeof(pages[0]);
+    if (ui_message_pages_code("ABOUT / CREDITS", C_CYAN, pages, n, code, sizeof(code) / sizeof(code[0]))) {
+        bool saved = sfx_tivo_toggle();
+        ui_tivo_dialog(sfx_tivo(), saved, sfx_enabled());
+    }
 }
 
 /* ---------------------------------------------------------------- actions */
@@ -1402,6 +1414,7 @@ int app_run(void)
             !(p & ~(WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT));
 
         if (p & WPAD_BUTTON_HOME) {
+            sfx_play(SFX_MENU);                 /* TiVo mode only */
             if (system_menu())
                 break;
             continue;

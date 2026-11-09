@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     sfx_load_setting();
     colors_load();
     alarm_load();
-    sfx_play(SFX_LONGTAP);                          /* the soft tick of B, not the chime or the A click */
+    sfx_play(SFX_STARTUP);                          /* the soft tick of B; in TiVo mode, the TiVo Central chime */
     if (toggled) {
         if (!risk_toggle_forced())
             ui_message("RISKY MODE", C_RED, "Could not save the setting. Is the SD card writable?");

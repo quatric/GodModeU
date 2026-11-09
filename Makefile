@@ -47,7 +47,7 @@ CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES	:=
 sFILES		:=
 SFILES		:=
-BINFILES	:=	gmsf2.bin sfx.bin pmic_firm.bin
+BINFILES	:=	gmsf2.bin sfx.bin tivo.bin pmic_firm.bin
 
 export LD	:=	$(CC)
 export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
@@ -90,7 +90,7 @@ MOBICLIP_O := $(patsubst %.c,%.o,$(notdir $(wildcard $(OUTPUT:$(TARGET)=)source/
 $(MOBICLIP_O): CFLAGS += -O3
 
 midisynth.o: gmsf2_bin.h
-sfx.o: sfx_bin.h
+sfx.o: sfx_bin.h tivo_bin.h
 memo.o: pmic_firm_bin.h
 
 %.bin.o %_bin.h : %.bin
