@@ -233,7 +233,7 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors: the file-manager reference.
 * **wfslib** and **wfs-tools** by koolkdev: the WFS layout.
 * **[MoonShell](https://www.gamebrew.org/wiki/Moonshell)** 2.10 by Moonlight (GPL-2.0 or later): the interface sound effects (`res/sfx.bin`).
-* **TiVo**'s interface sounds: an easter egg (`res/tivo.bin`, made by `scripts/make_tivo.py`); the last credits page has a hint.
+* **TiVo**'s interface sounds: an easter egg (`res/tivo.bin`, made by `scripts/make_tivo.py`); the last credits page has a hint, and the code works on the drive list too.
 * **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive, internal storage and both NANDs through Aroma's Mocha.
 * **[lwext4](https://github.com/gkostka/lwext4)** by Grzegorz Kostka (GPL-2.0 / BSD; Extrems' big-endian fork) with Extrems' libdvm
   ext4 driver (ZPL-2.1), ported and made read-only by `scripts/build_libext4.sh` and `scripts/ext4_driver.patch`.
