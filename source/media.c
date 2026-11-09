@@ -50,7 +50,7 @@ static bool media_open_type_(const char *path, ftype_t t)
     case FT_LAYOUT:
     case FT_ANIM:   return lyt_view(path) || layout_view(path);
     case FT_KMP:    return kmp_view(path);
-    case FT_WIIUTEXT: return wiiu_text_view(path);
+    case FT_WIIUTEXT: return flyt_view(path) || wiiu_text_view(path);
     case FT_MII:    return mii_file_view(path);
     default:        return false;
     }

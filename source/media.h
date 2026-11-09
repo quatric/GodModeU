@@ -24,6 +24,8 @@ u32 image_gx_size(int fmt, int w, int h);
 bool image_d4_ok(const u8 *h, u32 n, u64 size);
 
 bool model_view(const char *path);
+/* Wii U BFLYT layouts drawn in software (wiiu/flyt_view.c); false when it isn't one it can draw. */
+bool flyt_view(const char *path);
 unsigned model_brres_texture_palette(const unsigned char *b, unsigned len, const char *tex);  /* PLT0 offset, or 0 */          /* BRRES (MDL0) / BMD / BDL in 3D */
 
 bool bmg_view(const char *path);            /* BMG message files as text */

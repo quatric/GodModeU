@@ -551,9 +551,12 @@ static int parse_flim(const uint8_t *b, uint32_t n, const char *name, wtex_add_f
                                       0x31, 0x32, 0x33, 0x34, 0x34, 0x35, 0x02, 0x02, 0x41A, 0x431, 0x432, 0x433 };
     if (fm >= 24 || !map[fm]) return 0;
     wtex_t *t = new_gx2(map[fm], w, h, fl & 31, ((fl >> 5) & 7) << 8, 0, b, ds);
-    if (t && (fm == 1 || fm == 16)) {          /* A8 / BC4 alpha: white, the channel as alpha */
-        static const uint8_t a[4] = { 5, 5, 5, 0 };
-        set_sel(t, a);
+    /* NW4F's formats say what the channels mean (selectors: 0-3 R G B A, 4 zero, 5 one) */
+    static const uint8_t alpha[4] = { 5, 5, 5, 0 }, lum[4] = { 0, 0, 0, 5 }, lum_alpha[4] = { 0, 0, 0, 1 };
+    if (t) {
+        if (fm == 1 || fm == 16 || fm == 19) set_sel(t, alpha);           /* A8, BC4 alpha, A4 */
+        else if (fm == 0 || fm == 15 || fm == 18) set_sel(t, lum);        /* L8, BC4 luminance, L4 */
+        else if (fm == 2 || fm == 3 || fm == 17) set_sel(t, lum_alpha);   /* LA4, LA8, BC5 (LA) */
     }
     return emit(add, ctx, t, name);
 }
