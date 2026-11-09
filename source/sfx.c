@@ -134,13 +134,15 @@ void sfx_play(int id)
 
 void sfx_play_force(int id) { play(id); }
 
+static int noise_voice = -1;
+
 void sfx_wait(void)
 {
     if (!enabled || !asnd_on) return;
     for (int i = 0; i < 90; i++) {                  /* at most 1.5 s */
         bool busy = false;
-        for (int v = 0; v < 16; v++)
-            if (ASND_StatusVoice(v) == SND_WORKING) busy = true;
+        for (int v = 0; v < 16; v++)                /* the white noise never ends: it doesn't count */
+            if (v != noise_voice && ASND_StatusVoice(v) == SND_WORKING) busy = true;
         if (!busy) break;
         VIDEO_WaitVSync();
     }
@@ -149,7 +151,6 @@ void sfx_wait(void)
 /* White noise: one second of it, made once, looped until stopped. Plays even when the sounds are off. */
 #define NOISE_FRAMES 48000
 static s16 *noise_buf;
-static int noise_voice = -1;
 
 void sfx_noise_start(void)
 {
