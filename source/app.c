@@ -749,7 +749,7 @@ static void show_credits(void)
 
         "Interface sounds: MoonShell 2.10 (Moonlight; GPL v2 or later).\n\n"
         "Thanks for using GodModeU!\n\n"
-        "Psst... feeling nostalgic? Right here, enter + A - 1 2 -.",
+        "Psst... feeling nostalgic? Right here, enter + A - Y X - (on a Wii Remote, + A - 1 2 -).",
     };
     /* the easter egg: + A - 1 2 - on the last page switches TiVo mode
      * (on the GamePad and Pro Controller, 1 is Y and 2 is X) */
