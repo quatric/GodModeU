@@ -307,17 +307,20 @@ static bool take_tex(void *ctx, wtex_t *t, const char *label)
         uint8_t *small = malloc((size_t)w * h * 4);
         tex_t *x = &c->m->tex[slot];
         if (small) {
-            bool alpha = false;
+            uint32_t clear = 0, solid = 0;
             for (int y = 0; y < h; y++)
                 for (int xx = 0; xx < w; xx++) {
                     const uint8_t *s = full + ((size_t)y * step * t->w + (size_t)xx * step) * 4;
                     memcpy(small + ((size_t)y * w + xx) * 4, s, 4);
-                    alpha |= s[3] < 128;
+                    if (s[3] < 128) clear++;
+                    else solid++;
                 }
             x->rgba = small;
             x->w = w;
             x->h = h;
-            x->alpha = alpha;
+            /* cut-outs (leaves, fences) are alpha tested; a texture that is mostly see-through is a mask
+             * for a shader (its alpha means something else), drawn solid */
+            x->alpha = clear && solid >= (uint32_t)(w * h) / 4;
         }
     }
     free(full);
