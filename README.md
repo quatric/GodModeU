@@ -119,7 +119,7 @@ GodModeU needs for WUD images.
 ## Other features
 
 * One text interface for every drive, with free space and a usage bar, and the GodModeWii browser: copy, cut, paste and delete
-  with progress and **hold B to cancel**, multi-select, rename, new folder, info, disk usage, text / hex viewers and editors.
+  with progress and **hold B to cancel**, multi-select, rename, new folder, new file, info, disk usage, text / hex viewers and editors.
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
   off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`).
 * **HOME menu**: lock the protected drives again, remount, FTP server, FTP install server, Wiiload (homebrew `.rpx` / `.wuhb`
