@@ -402,6 +402,32 @@ archive_t *arc_bfsar_open(const src_t *f, const char *name)
             snprintf(nm, sizeof(nm), "%s_%04u.%s", base[0] ? base : "file", (unsigned)i, ext_of(m));
         if (tree_add(&a->tree, 0, nm, false, sz, at, 0, 0) < 0) a = raw_fail(a);
     }
+
+    /* Sequences: every sequence sound whose FSEQ is inside, playable with its bank (A in the browser).
+     * Each entry is its FSEQ file; the player finds the sound again by name. */
+    int seqdir = -1;
+    int32_t soff = (int32_t)r32(begin + 4, le);
+    const uint8_t *st = soff != -1 && r16(begin, le) == 0x2100 && in(&I, begin + soff, 4) ? begin + soff : NULL;
+    uint32_t nsnd = st ? r32(st, le) : 0;
+    if (nsnd > 200000 || (st && !in(&I, st + 4, nsnd * 8))) nsnd = 0;
+    for (uint32_t i = 0; a && i < nsnd; i++) {
+        int32_t eo = (int32_t)r32(st + 4 + i * 8 + 4, le);
+        if (eo == -1 || !in(&I, st + eo, 0x14) || r16(st + eo + 0xC, le) != 0x2203) continue;
+        uint32_t fid = r32(st + eo, le);
+        if (fid >= nfiles) continue;
+        int32_t fe = (int32_t)r32(ftab + 4 + fid * 8 + 4, le);
+        if (fe == -1 || !in(&I, ftab + fe, 24) || r16(ftab + fe, le) != 0x220C) continue;
+        uint32_t off = r32(ftab + fe + 16, le), sz = r32(ftab + fe + 20, le);
+        uint64_t at = (uint64_t)fo + 8 + off;
+        if (off == 0xFFFFFFFF || !sz || at + sz > f->size) continue;
+        char sn[96], nm[128];
+        strg_name(&S, 0x01000000u | i, sn, sizeof(sn));
+        if (sn[0]) snprintf(nm, sizeof(nm), "%s.seq", sn);
+        else snprintf(nm, sizeof(nm), "sound%04u.seq", (unsigned)i);
+        tree_clean_name(nm);
+        if (seqdir < 0 && (seqdir = tree_add(&a->tree, 0, "Sequences", true, 0, 0, 0, 0)) < 0) break;
+        tree_add(&a->tree, seqdir, nm, false, sz, at, 0, 0);
+    }
     free(names);
     free((void *)I.b);
     free((void *)S.b);

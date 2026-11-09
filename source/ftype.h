@@ -14,7 +14,7 @@ typedef enum {
     FT_STREAM,          /* BRSTM / BCSTM / BFSTM, BRWAV / BCWAV / BFWAV, BNS, AST, DSP, BTSND, SFX */
     FT_AUDIO,           /* WAV, AIFF, MP3, FLAC, Ogg Vorbis */
     FT_MIDI,            /* standard MIDI, RIFF RMID */
-    FT_SEQ,             /* RSEQ in a BRSAR */
+    FT_SEQ,             /* RSEQ in a BRSAR, FSEQ in a BFSAR */
     FT_VIDEO,           /* Mobiclip (MOC5), THP, Flipnote PPM / KWZ */
     /* TPL, TEX0, PLT0, BRFNT / BRFNA, BREFT, PNG, JPEG, WebP, AJPG, banners, BTI, TXTR, DKZ,
      * Monster Games TEX / ART / IMG / TM0; Wii U GTX, BFLIM, BFFNT, BFRES, NUT, DDS, Tropical TXTR */

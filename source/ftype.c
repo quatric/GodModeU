@@ -105,9 +105,12 @@ ftype_t ftype_sniff(const u8 *h, u32 n, u64 size, const char *name)
         if (M("RSTM") || M("CSTM") || M("FSTM") || M("RWAV") || M("CWAV") || M("FWAV") || M("BNS "))
             return FT_STREAM;
         if (M("IMD5") && n >= 0x24 && !memcmp(h + 0x20, "BNS ", 4)) return FT_STREAM;
+        if (M("IDSP") && n >= 0x2C && be32(h + 8) >= 1 && be32(h + 8) <= 16) return FT_STREAM;
         /* AST: PCM16 / ADPCM */
         if (M("STRM") && n >= 0x40 && be16(h + 8) <= 1) return FT_STREAM;
         if (M("RSEQ")) return FT_SEQ;
+        /* a BFSAR's Sequences folder: played with its bank (a lone .bfseq shows as text) */
+        if (M("FSEQ") && name && arc_name_has_ext(name, ".seq")) return FT_SEQ;
         if (M("MThd")) return FT_MIDI;
         if (n >= 12 && M("RIFF") && !memcmp(h + 8, "RMID", 4)) return FT_MIDI;
         if (n >= 12 && (M("RIFF") || M("RF64") || M("riff")) && !memcmp(h + 8, "WAVE", 4))

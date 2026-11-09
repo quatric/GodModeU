@@ -70,10 +70,10 @@ images, disks and partitions (ext2/3/4, XFS, HFS+, APFS, ZFS, MBR / GPT), zip / 
 
 | Kind | Formats |
 | --- | --- |
-| Archives (open like folders) | **SARC** (`.sarc`, `.pack`, and `.szs` once its Yaz0 is undone), **BFSAR** (every internal file, named after its sound, bank, wave archive or group), **BFWAR** (its waves), **BARS** (each asset's FWAV / FSTP, named from its AMTA), **NUS3AUDIO** |
+| Archives (open like folders) | **SARC** (`.sarc`, `.pack`, and `.szs` once its Yaz0 is undone), **BFSAR** (every internal file, named after its sound, bank, wave archive or group, and a *Sequences* folder whose sequences play with their bank and waves, like a BRSAR's), **BFWAR** (its waves), **BARS** (each asset's FWAV / FSTP, named from its AMTA), **NUS3AUDIO** |
 | Images | **GTX** (every texture), **BFLIM**, **BFFNT** (glyph sheets), **BFRES** (its FTEX textures), **NUT** (Smash Bros. for Wii U), **DDS**, and Retro Studios' Wii U **TXTR** (Donkey Kong Country: Tropical Freeze; LZSS or zlib buffers). Every GX2 tile mode (linear, 1D and 2D / 2B macro tiling with pipe and bank swizzle) and format: R8 to RGBA32F, RGB565, RGB5A1, RGBA4, RGB10A2, R11G11B10F, depth, and BC1 - BC5 (BC5 normal maps get their Z rebuilt so they look like normal maps) |
-| Audio | **BFSTM**, **BFWAV**, **BTSND** (the boot sound), as before |
-| Text | **BYAML / BYML** (v1 - v4, as a YAML-style tree), **XMB** (Smash Bros., as elements and attributes), **AAMP** parameter files and **BGLPBD** light probes (lists, objects and values), **BFLYT** (textures, fonts, materials, the pane tree with positions, sizes and texts), **BFLAN** (the tag, its groups, and what each pane / material animates), **BFSEQ** (its labels) |
+| Audio | **BFSTM**, **BFWAV**, **BTSND** (the boot sound), as before; **BFSEQ** sequences from a BFSAR (above); **IDSP** (NUS3AUDIO's DSP-ADPCM tracks; Opus and BNSF tracks are listed but not played) |
+| Text | **BYAML / BYML** (v1 - v4, as a YAML-style tree), **XMB** (Smash Bros., as elements and attributes), **AAMP** parameter files and **BGLPBD** light probes (lists, objects and values), **BFLYT** (textures, fonts, materials, the pane tree with positions, sizes and texts), **BFLAN** (the tag, its groups, and what each pane / material animates), **BFSEQ** (its labels, when it isn't in a BFSAR) |
 | Disc images | **WUD**, **WUX** and wudump's `game_part1.wud`: install (below) |
 
 Textures are only expanded when shown, so a BFRES with dozens of them opens quickly; **+** / **-** steps through them as in the

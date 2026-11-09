@@ -5,6 +5,7 @@
  * bns.c, dsp.c, astdec.c, btsnd.c) and nintoolbox:
  *   BRSTM / BCSTM / BFSTM     block-interleaved DSP-ADPCM, PCM16 or PCM8
  *   BRWAV / BCWAV / BFWAV     one wave per channel (DSP-ADPCM, PCM16, PCM8)
+ *   IDSP                      Namco's DSP-ADPCM (NUS3AUDIO tracks), interleaved or one channel after another
  *   BNS                       Wii banner sound (DSP-ADPCM)
  *   DSP                       standard DSP-ADPCM header(s)
  *   SFX                       Monster Games' DSP-ADPCM (Excite Truck, Excitebots)
@@ -394,6 +395,47 @@ static bool open_dsp(snd_t *s)
     return true;
 }
 
+/* Namco IDSP (the DSP-ADPCM tracks in Smash Bros.' NUS3AUDIO / NUS3BANK files), after vgmstream's reader:
+ * channels at 0x08, rate 0x0C, samples 0x10, loop start / end 0x14 / 0x18 (samples; no end: no loop), the
+ * interleave 0x1C, each channel's 0x60-byte DSP header (size 0x20, first at 0x24), the data at 0x28. */
+static bool open_idsp(snd_t *s, const u8 *h, u32 hlen)
+{
+    s->fmt = "IDSP";
+    if (hlen < 0x2C) return false;
+    u32 nch = be32(h + 8), rate = be32(h + 0x0C), samples = be32(h + 0x10);
+    u32 ls = be32(h + 0x14), le = be32(h + 0x18), il = be32(h + 0x1C);
+    u32 hs = be32(h + 0x20), ho = be32(h + 0x24), data = be32(h + 0x28);
+    if (!nch || nch > MAXCH || !rate || rate > 96000 || !samples || hs < 0x3C || data >= s->f.size) return false;
+    for (u32 ch = 0; ch < nch; ch++) {
+        u8 *x = grab(s, ho + (u64)ch * hs, 0x3C);
+        if (!x) return false;
+        load_coefs(s, ch, x + 0x1C);
+        free(x);
+    }
+    s->nch = nch;
+    s->rate = rate;
+    s->total = samples;
+    s->loop = le != 0 && ls < samples;
+    s->loop_start = ls;
+    s->codec = CO_ADPCM;
+    if (nch == 1 || !il) {                          /* one channel after another */
+        u64 per = (s->f.size - data) / nch;
+        for (u32 ch = 0; ch < nch; ch++) s->choff[ch] = data + ch * per;
+        s->layout = L_PLANAR;
+        return true;
+    }
+    if (il % 8 || il > MAX_BLOCK) return false;
+    s->layout = L_INTERLEAVED;
+    s->data = data;
+    s->bs = il;
+    s->spb = il / 8 * 14;
+    s->nblocks = (samples + s->spb - 1) / s->spb;
+    s->last_samples = samples - (s->nblocks - 1) * s->spb;
+    s->last_used = adpcm_bytes(s->last_samples);
+    s->last_pad = il;
+    return true;
+}
+
 /* Monster Games .sfx (Excite Truck / Excitebots), after nintoolbox's lib-sfx.c: no magic; a 0x80 header
  * of mixed byte order (little endian payload size, header size 0x80, rate at 0x10, byte rate rate * 2
  * at 0x14; big endian nibble count at 0x34 and DSP coefficients at 0x3C) over one mono DSP-ADPCM stream. */
@@ -524,6 +566,8 @@ static bool snd_open(snd_t *s, const char *path)
     } else if (!memcmp(h, "IMD5", 4) && hlen >= 0x24 && !memcmp(h + 0x20, "BNS ", 4)) {
         s->layout = L_PLANAR;
         ok = open_bns(s, 0x20);
+    } else if (!memcmp(h, "IDSP", 4)) {
+        ok = open_idsp(s, h, hlen);
     } else if (arc_name_has_ext(path, ".dsp")) {
         s->layout = L_PLANAR;
         ok = open_dsp(s);
@@ -1394,7 +1438,7 @@ static void draw_seq(seq_t *sq, const char *name, bool paused, int mode, bool fu
     ui_reset();
 }
 
-/* "x.brsar|/Sequences/NAME.seq": sequence NAME of x.brsar, with its bank. */
+/* "x.brsar|/Sequences/NAME.seq" (or a .bfsar's): sequence NAME of the sound archive, with its bank. */
 static bool play_seq(const char *path)
 {
     if (!arc_name_has_ext(path, ".seq")) return false;

@@ -19,6 +19,19 @@
  *           (direct, a range table or an index table) leading to a region: wave index, ADSR,
  *           original key, volume, pan, tuning. WAVE: wave infos, when the waves aren't in an RWAR.
  *   RWAR    TABL of RWAV files: DSP-ADPCM, PCM16 or PCM8, optionally looping.
+ *
+ * NW4F (Wii U) sound archives, BFSAR, play the same way: their FSEQ sequences use the same command
+ * set (with the time prefixes and the extra extended commands of the later SDKs), and their banks
+ * (FBNK) and waves (FWAR of FWAV) are the same ideas in the newer layout:
+ *   BFSAR   STRG names (a string table and a lookup tree of item ids); INFO reference tables of
+ *           sounds (a sequence sound's details: its bank ids and the offset it starts at), banks,
+ *           wave archives and files (the FILE block offset and size of each internal file).
+ *   FSEQ    DATA: the command stream.
+ *   FBNK    INFO: a wave id table (wave archive, index) and an instrument table. An instrument is a
+ *           chain of direct / range / index tables by key, then by velocity, leading to a velocity
+ *           region: its wave id index, then the values its flags say it has (original key, volume,
+ *           pan, pitch, ..., the envelope).
+ *   FWAR    INFO: where each FWAV is in the FILE block. FWAV: DSP-ADPCM, PCM16 or PCM8, channel 0.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +44,7 @@
 #define MAX_VOICES  40
 #define MAX_WAVES   4096
 #define MAX_FILE    (24u << 20)
+#define MAX_WARCS   8
 #define CALL_DEPTH  4
 #define ENV_MIN     (-904.0f)           /* dB x 10: -90.4 dB is silence */
 #define MS_FRAMES   (SEQ_RATE / 1000)   /* the envelope and the sequencer step every millisecond */
@@ -144,6 +158,12 @@ struct seq {
     wave_t *waves;
     uint32_t nwaves;
     char bank[64];
+    /* NW4F: the FBNK in rbnk, its wave id table, and the wave archives it uses */
+    bool cafe;
+    uint32_t wid;                       /* wave id table (count, then archive id and index) */
+    uint8_t *warc[MAX_WARCS];
+    uint32_t warc_n[MAX_WARCS], warc_id[MAX_WARCS];
+    int nwarc;
     /* playback */
     track_t t[MAX_TRACKS];
     voice_t v[MAX_VOICES];
@@ -337,6 +357,75 @@ static void decode_wave(wave_t *w, const uint8_t *wi, uint32_t wn, const uint8_t
     w->bad = false;
 }
 
+/* NW4F: channel 0 of an FWAV (n bytes at f). */
+static void decode_fwav(wave_t *w, const uint8_t *f, uint32_t n)
+{
+    w->bad = true;
+    if (n < 0x40 || memcmp(f, "FWAV", 4) || be16(f + 4) != 0xFEFF) return;
+    uint32_t info = 0, data = 0, ns = be16(f + 0x10);
+    for (uint32_t i = 0; i < ns && 0x14 + i * 12 + 12 <= n; i++) {
+        const uint8_t *e = f + 0x14 + i * 12;
+        if (be16(e) == 0x7000) info = be32(e + 4);
+        else if (be16(e) == 0x7001) data = be32(e + 4);
+    }
+    if (!info || !data || info + 0x30 > n || data + 8 > n || memcmp(f + info, "INFO", 4)) return;
+    const uint8_t *wi = f + info + 8;
+    uint32_t wn = n - info - 8;
+    int fmt = wi[0];
+    w->loop = wi[1] != 0;
+    w->rate = be32(wi + 4);
+    w->loop_start = be32(wi + 8);
+    uint32_t cnt = be32(wi + 12);
+    if (!w->rate || !cnt || cnt > (8u << 20) || be32(wi + 0x14) < 1) return;
+    uint32_t ci = 0x14 + be32(wi + 0x14 + 8);             /* channel 0's info */
+    if (ci + 16 > wn) return;
+    uint32_t start = data + 8 + be32(wi + ci + 4);
+    if (start >= n) return;
+    const uint8_t *p = f + start;
+    uint32_t avail = n - start, i = 0;
+    int16_t *o = malloc((cnt + 2) * sizeof(int16_t));
+    if (!o) return;
+    if (fmt == 2) {
+        uint32_t ai = be32(wi + ci + 12);
+        if (ai == 0xFFFFFFFFu || ci + ai + 0x26 > wn) {
+            free(o);
+            return;
+        }
+        const uint8_t *a = wi + ci + ai;
+        int16_t coef[16];
+        for (int k = 0; k < 16; k++) coef[k] = (int16_t)be16(a + k * 2);
+        int32_t h1 = (int16_t)be16(a + 0x22), h2 = (int16_t)be16(a + 0x24);
+        for (uint32_t fr8 = 0; i < cnt && fr8 * 8 + 8 <= avail; fr8++) {
+            const uint8_t *fr = p + fr8 * 8;
+            int scale = 1 << (fr[0] & 15), ix = (fr[0] >> 4) & 7;
+            int32_t c1 = coef[ix * 2], c2 = coef[ix * 2 + 1];
+            for (int k = 0; k < 14 && i < cnt; k++) {
+                int nib = k & 1 ? fr[1 + k / 2] & 15 : fr[1 + k / 2] >> 4;
+                if (nib >= 8) nib -= 16;
+                int32_t smp = (nib * scale * 2048 + 1024 + c1 * h1 + c2 * h2) >> 11;
+                if (smp > 32767) smp = 32767;
+                if (smp < -32768) smp = -32768;
+                o[i++] = (int16_t)smp;
+                h2 = h1;
+                h1 = smp;
+            }
+        }
+    } else if (fmt == 1) {
+        for (; i < cnt && i * 2 + 2 <= avail; i++) o[i] = (int16_t)be16(p + i * 2);
+    } else {
+        for (; i < cnt && i < avail; i++) o[i] = (int16_t)((int8_t)p[i] * 256);
+    }
+    if (!i) {
+        free(o);
+        return;
+    }
+    o[i] = o[i + 1] = 0;
+    w->pcm = o;
+    w->n = i;
+    if (w->loop_start >= i) w->loop = false;
+    w->bad = false;
+}
+
 static const wave_t *get_wave(seq_t *s, uint32_t idx)
 {
     if (idx >= s->nwaves) return NULL;
@@ -344,6 +433,30 @@ static const wave_t *get_wave(seq_t *s, uint32_t idx)
     if (w->pcm) return w;
     if (w->bad) return NULL;
     w->bad = true;
+    if (s->cafe) {                      /* the wave id table: wave archive and index */
+        uint32_t e = s->wid + 4 + idx * 8;
+        if (e + 8 > s->rbnk_n) return NULL;
+        uint32_t aid = be32(s->rbnk + e), wix = be32(s->rbnk + e + 4);
+        for (int i = 0; i < s->nwarc; i++) {
+            if (s->warc_id[i] != aid) continue;
+            const uint8_t *a = s->warc[i];
+            uint32_t an = s->warc_n[i], ns = be16(a + 0x10), info = 0, file = 0;
+            for (uint32_t k = 0; k < ns && 0x14 + k * 12 + 12 <= an; k++) {
+                if (be16(a + 0x14 + k * 12) == 0x6800) info = be32(a + 0x18 + k * 12);
+                else if (be16(a + 0x14 + k * 12) == 0x6801) file = be32(a + 0x18 + k * 12);
+            }
+            if (!info || !file || info + 12 > an || file + 8 > an) return NULL;
+            uint32_t cnt = be32(a + info + 8);
+            uint64_t ent = (uint64_t)info + 12 + wix * 12ull;
+            if (wix >= cnt || ent + 12 > an) return NULL;
+            uint64_t off = (uint64_t)file + 8 + be32(a + ent + 4);
+            uint32_t sz = be32(a + ent + 8);
+            if (off + sz > an) return NULL;
+            decode_fwav(w, a + off, sz);
+            break;
+        }
+        return w->pcm ? w : NULL;
+    }
     if (s->wtab) {                      /* infos in the bank, samples in the group's wave data */
         blk_t k = { s->rbnk + s->wtab, s->wtab_n };
         uint32_t o = bu32(&k, 8 + idx * 8ull);
@@ -395,8 +508,15 @@ static int32_t sub_ref(const seq_t *s, uint32_t ref, int v)
     return -1;
 }
 
+/* What a note plays: the region of the bank for its program, key and velocity. */
+typedef struct {
+    uint32_t wave;
+    int key, vol, pan, a, d, su, re;
+    float tune;
+} region_t;
+
 /* The region for program / key / velocity: its offset in the instrument data, or -1. */
-static int32_t find_region(const seq_t *s, int prg, int key, int vel)
+static int32_t find_region_r(const seq_t *s, int prg, int key, int vel)
 {
     blk_t k = { s->rbnk + s->inst, s->inst_n };
     uint32_t cnt = bu32(&k, 0);
@@ -408,6 +528,104 @@ static int32_t find_region(const seq_t *s, int prg, int key, int vel)
     return rg + 0x14 <= k.n ? (int32_t)rg : -1;
 }
 
+/* NW4F: a reference (type, offset from base) at `at` in the FBNK; false when it points nowhere. */
+static bool cref(const seq_t *s, uint32_t at, uint32_t base, uint16_t *type, uint32_t *to)
+{
+    if (at + 8 > s->rbnk_n) return false;
+    uint32_t off = be32(s->rbnk + at + 4);
+    if (off == 0xFFFFFFFFu || (uint64_t)base + off >= s->rbnk_n) return false;
+    *type = be16(s->rbnk + at);
+    *to = base + off;
+    return true;
+}
+
+/* NW4F: one level of the region tables: the chunk `c` of kind `kind` (direct, range, index) picks the
+ * item for value v; *to is it. */
+static bool cpick(const seq_t *s, uint16_t kind, uint32_t c, int v, uint32_t *to)
+{
+    uint16_t t;
+    const uint8_t *b = s->rbnk;
+    uint32_t n = s->rbnk_n;
+    if (kind == 0x6000) return cref(s, c, c, &t, to);
+    if (kind == 0x6001) {                                   /* range: highest value of each */
+        if (c + 4 > n) return false;
+        uint32_t cnt = be32(b + c);
+        if (cnt > 128 || c + 4 + cnt > n) return false;
+        uint32_t refs = (c + 4 + cnt + 3) & ~3u;
+        for (uint32_t i = 0; i < cnt; i++)
+            if (v <= b[c + 4 + i]) return cref(s, refs + i * 8, c, &t, to);
+        return false;
+    }
+    if (kind == 0x6002) {                                   /* index: min, max */
+        if (c + 4 > n) return false;
+        int lo = b[c], hi = b[c + 1];
+        if (v < lo || v > hi) return false;
+        return cref(s, c + 4 + (uint32_t)(v - lo) * 8, c, &t, to);
+    }
+    return false;
+}
+
+static bool find_region_c(const seq_t *s, int prg, int key, int vel, region_t *r)
+{
+    uint32_t tab = s->inst, inst, k, v, c;
+    uint16_t t;
+    if (tab + 4 > s->rbnk_n) return false;
+    uint32_t cnt = be32(s->rbnk + tab);
+    if (prg < 0 || (uint32_t)prg >= cnt) return false;
+    if (!cref(s, tab + 4 + prg * 8u, tab, &t, &inst) || t != 0x5900) return false;
+    if (!cref(s, inst, inst, &t, &c) || !cpick(s, t, c, key, &k)) return false;
+    if (!cref(s, k, k, &t, &c) || !cpick(s, t, c, vel, &v)) return false;
+    if (v + 8 > s->rbnk_n) return false;
+    const uint8_t *b = s->rbnk;
+    r->wave = be32(b + v);
+    uint32_t flags = be32(b + v + 4), at = v + 8;
+    r->key = 60;
+    r->vol = 127;
+    r->pan = 64;
+    r->tune = 1;
+    r->a = 127, r->d = 127, r->su = 127, r->re = 127;
+    for (int bit = 0; bit < 32; bit++) {
+        if (!(flags >> bit & 1)) continue;
+        if (at + 4 > s->rbnk_n) break;
+        uint32_t x = be32(b + at);
+        switch (bit) {
+        case 0: r->key = x & 0x7F; break;
+        case 1: r->vol = x & 0xFF; break;
+        case 2: r->pan = x & 0x7F; break;
+        case 3: {
+            union { uint32_t u; float f; } f = { x };
+            if (f.f > 0.01f && f.f < 100.0f) r->tune = f.f;
+            break;
+        }
+        case 9: {                                           /* the envelope, through a reference */
+            uint32_t e;
+            if (cref(s, v + x, v + x, &t, &e) && e + 5 <= s->rbnk_n) {
+                r->a = b[e], r->d = b[e + 1], r->su = b[e + 2], r->re = b[e + 4];   /* (e + 3: hold) */
+            }
+            break;
+        }
+        }
+        at += 4;
+    }
+    return true;
+}
+
+static bool find_region(const seq_t *s, int prg, int key, int vel, region_t *out)
+{
+    if (s->cafe) return find_region_c(s, prg, key, vel, out);
+    int32_t rg = find_region_r(s, prg, key, vel);
+    if (rg < 0) return false;
+    const uint8_t *r = s->rbnk + s->inst + rg;
+    out->wave = be32(r);
+    out->a = r[4], out->d = r[5], out->su = r[6], out->re = r[7];
+    out->key = r[0x0C];
+    out->vol = r[0x0D];
+    out->pan = r[0x0E];
+    union { uint32_t u; float f; } tune = { be32(r + 0x10) };
+    out->tune = tune.f > 0.01f && tune.f < 100.0f ? tune.f : 1.0f;
+    return true;
+}
+
 /* ---------------------------------------------------------------- open */
 
 static void free_files(seq_t *s)
@@ -415,6 +633,7 @@ static void free_files(seq_t *s)
     if (s->waves)
         for (uint32_t i = 0; i < s->nwaves; i++) free(s->waves[i].pcm);
     free(s->waves);
+    for (int i = 0; i < s->nwarc; i++) free(s->warc[i]);
     free(s->rseq);
     free(s->rbnk);
     free(s->wdat);
@@ -459,10 +678,15 @@ static void seq_restart(seq_t *s)
     s->ended = false;
 }
 
+static seq_t *fsar_open(seq_read_fn rd, void *ctx, uint64_t size, const char *name, const char **err);
+
 seq_t *seq_open(seq_read_fn rd, void *ctx, uint64_t size, const char *name, const char **err)
 {
     rsar_t r;
     seq_t *s = NULL;
+    uint8_t magic[4];
+    if (size >= 0x40 && rd(ctx, 0, magic, 4) && !memcmp(magic, "FSAR", 4))
+        return fsar_open(rd, ctx, size, name, err);
 
     *err = "This sound archive couldn't be read";
     if (!rsar_load(&r, rd, ctx, size)) goto fail;
@@ -565,6 +789,231 @@ fail:
     return NULL;
 }
 
+/* ---------------------------------------------------------------- NW4F (BFSAR) */
+
+typedef struct {
+    uint8_t *ib, *sb;
+    uint32_t in_n, st_n;
+    uint64_t file;                      /* the FILE block's contents */
+} fsar_t;
+
+/* INFO reference table `which` (by its type, 0x2100 sounds ...): its offset in INFO, or 0. */
+static uint32_t ftable(const fsar_t *f, uint16_t which, uint32_t *count)
+{
+    for (uint32_t i = 0; i < 8; i++) {
+        uint32_t at = 8 + i * 8;
+        if (at + 8 > f->in_n || be16(f->ib + at) != which) continue;
+        uint32_t off = be32(f->ib + at + 4);
+        if (off == 0xFFFFFFFFu || 8ull + off + 4 > f->in_n) return 0;
+        uint32_t t = 8 + off, n = be32(f->ib + t);
+        if (n > f->in_n / 8 || t + 4 + n * 8ull > f->in_n) return 0;
+        *count = n;
+        return t;
+    }
+    return 0;
+}
+
+/* Item i of table t (an entry offset in INFO), or 0. */
+static uint32_t fitem(const fsar_t *f, uint32_t t, uint32_t i)
+{
+    uint32_t off = be32(f->ib + t + 4 + i * 8 + 4);
+    if (off == 0xFFFFFFFFu || (uint64_t)t + off + 4 > f->in_n) return 0;
+    return t + off;
+}
+
+static uint32_t fu32(const fsar_t *f, uint64_t at) { return at + 4 <= f->in_n ? be32(f->ib + at) : 0xFFFFFFFFu; }
+
+/* The name of item `id` from STRG (the lookup tree's leaves), into out. */
+static void fname(const fsar_t *f, uint32_t id, char *out, size_t n)
+{
+    out[0] = 0;
+    if (!f->sb || f->st_n < 0x18) return;
+    const uint8_t *b = f->sb;
+    uint32_t st = be32(b + 0xC), lk = be32(b + 0x14);
+    if (st == 0xFFFFFFFFu || lk == 0xFFFFFFFFu) return;
+    uint64_t tab = 8ull + st, look = 8ull + lk;
+    if (tab + 4 > f->st_n || look + 8 > f->st_n) return;
+    uint32_t ns = be32(b + tab), nn = be32(b + look + 4);
+    if (look + 8 + nn * 20ull > f->st_n || tab + 4 + ns * 12ull > f->st_n) return;
+    for (uint32_t i = 0; i < nn; i++) {
+        const uint8_t *r = b + look + 8 + i * 20;
+        if (!be16(r) || be32(r + 0x10) != id) continue;
+        uint32_t si = be32(r + 0xC);
+        if (si >= ns) return;
+        uint64_t so = tab + be32(b + tab + 4 + si * 12 + 4);
+        uint32_t sz = be32(b + tab + 4 + si * 12 + 8);
+        if (!sz || so + sz > f->st_n) return;
+        if (sz > n) sz = (uint32_t)n;
+        memcpy(out, b + so, sz - 1);
+        out[sz - 1] = 0;
+        return;
+    }
+}
+
+/* Where internal file `fid` is (absolute offset and size); false when it isn't in the archive. */
+static bool ffile(const fsar_t *f, uint32_t fid, uint64_t *at, uint32_t *n)
+{
+    uint32_t cnt, t = ftable(f, 0x2106, &cnt);
+    if (!t || fid >= cnt) return false;
+    uint32_t e = fitem(f, t, fid);
+    if (!e || e + 24 > f->in_n || be16(f->ib + e) != 0x220C) return false;
+    uint32_t off = be32(f->ib + e + 16), sz = be32(f->ib + e + 20);
+    if (off == 0xFFFFFFFFu || !sz) return false;
+    *at = f->file + off;
+    *n = sz;
+    return true;
+}
+
+static seq_t *fsar_open(seq_read_fn rd, void *ctx, uint64_t size, const char *name, const char **err)
+{
+    fsar_t f;
+    seq_t *s = NULL;
+    memset(&f, 0, sizeof(f));
+    *err = "This sound archive couldn't be read";
+    uint8_t h[0x40];
+    if (!rd(ctx, 0, h, 0x40) || be16(h + 4) != 0xFEFF) goto fail;
+    uint64_t io = 0, so = 0, fo = 0;
+    uint32_t is = 0, ss = 0;
+    for (uint32_t i = 0; i < be16(h + 0x10) && i < 3; i++) {
+        const uint8_t *e = h + 0x14 + i * 12;
+        switch (be16(e)) {
+        case 0x2000: so = be32(e + 4), ss = be32(e + 8); break;
+        case 0x2001: io = be32(e + 4), is = be32(e + 8); break;
+        case 0x2002: fo = be32(e + 4); break;
+        }
+    }
+    if (!io || !fo || is < 0x48 || is > (16u << 20)) goto fail;
+    f.ib = grab(rd, ctx, size, io, is);
+    f.in_n = is;
+    if (!f.ib || memcmp(f.ib, "INFO", 4)) goto fail;
+    if (so && ss >= 0x18 && ss <= (16u << 20)) {
+        f.sb = grab(rd, ctx, size, so, ss);
+        f.st_n = ss;
+        if (f.sb && memcmp(f.sb, "STRG", 4)) {
+            free(f.sb);
+            f.sb = NULL;
+        }
+    }
+    f.file = fo + 8;
+
+    /* the sequence sound by its name */
+    uint32_t nsnd, stab = ftable(&f, 0x2100, &nsnd), se = 0, det = 0;
+    for (uint32_t i = 0; stab && i < nsnd && !se; i++) {
+        uint32_t e = fitem(&f, stab, i);
+        if (!e || e + 0x14 > f.in_n || be16(f.ib + e + 0xC) != 0x2203) continue;
+        char nm[128];
+        fname(&f, 0x01000000u | i, nm, sizeof(nm));
+        if (!nm[0]) snprintf(nm, sizeof(nm), "sound%04u", (unsigned)i);
+        if (same_name(nm, name)) {
+            se = e;
+            det = e + be32(f.ib + e + 0x10);
+        }
+    }
+    *err = "This sequence isn't in the sound archive";
+    if (!se || det + 0x10 > f.in_n) goto fail;
+
+    /* its start (option bit 0) and its first bank */
+    uint32_t label = 0, flags = fu32(&f, det + 0xC);
+    if (flags & 1) label = fu32(&f, det + 0x10);
+    uint32_t bank = 0xFFFFFFFFu, bt = det + fu32(&f, det + 4), bc = fu32(&f, bt);
+    for (uint32_t i = 0; i < bc && i < 4; i++) {
+        uint32_t id = fu32(&f, bt + 4 + i * 4ull);
+        if (id != 0xFFFFFFFFu) {
+            bank = id & 0xFFFFFF;
+            break;
+        }
+    }
+
+    s = calloc(1, sizeof(*s));
+    *err = "Not enough memory";
+    if (!s) goto fail;
+    s->cafe = true;
+    s->sound_vol = f.ib[se + 8] / 127.0f;
+    if (s->sound_vol <= 0) s->sound_vol = 1;
+
+    /* the FSEQ */
+    uint64_t at;
+    uint32_t n;
+    *err = "The sequence's file isn't inside the sound archive";
+    if (!ffile(&f, fu32(&f, se), &at, &n)) goto fail;
+    s->rseq = grab(rd, ctx, size, at, n);
+    s->rseq_n = n;
+    *err = "The sequence file is damaged";
+    if (!s->rseq || n < 0x20 || memcmp(s->rseq, "FSEQ", 4)) goto fail;
+    uint32_t data = 0;
+    for (uint32_t i = 0; i < be16(s->rseq + 0x10) && 0x14 + i * 12 + 12 <= n; i++)
+        if (be16(s->rseq + 0x14 + i * 12) == 0x5000) data = be32(s->rseq + 0x18 + i * 12);
+    if (!data || data + 8 > n || memcmp(s->rseq + data, "DATA", 4)) goto fail;
+    s->code = data + 8;
+    s->code_n = n - s->code;
+    if (label >= s->code_n) label = 0;
+
+    /* the bank */
+    *err = "The sequence's instrument bank couldn't be found";
+    uint32_t nb, btab = ftable(&f, 0x2101, &nb), be;
+    if (!btab || bank >= nb || !(be = fitem(&f, btab, bank))) goto fail;
+    fname(&f, 0x03000000u | bank, s->bank, sizeof(s->bank));
+    if (!ffile(&f, fu32(&f, be), &at, &n)) goto fail;
+    s->rbnk = grab(rd, ctx, size, at, n);
+    s->rbnk_n = n;
+    if (!s->rbnk || n < 0x30 || memcmp(s->rbnk, "FBNK", 4)) goto fail;
+    uint32_t info = 0;
+    for (uint32_t i = 0; i < be16(s->rbnk + 0x10) && 0x14 + i * 12 + 12 <= n; i++)
+        if (be16(s->rbnk + 0x14 + i * 12) == 0x5800) info = be32(s->rbnk + 0x18 + i * 12);
+    if (!info || info + 0x18 > n || memcmp(s->rbnk + info, "INFO", 4)) goto fail;
+    uint32_t body = info + 8;
+    s->wid = s->inst = 0;
+    for (int i = 0; i < 2; i++) {
+        uint16_t ty = be16(s->rbnk + body + i * 8);
+        uint32_t off = be32(s->rbnk + body + i * 8 + 4);
+        if (off == 0xFFFFFFFFu || body + (uint64_t)off + 4 > n) continue;
+        if (ty == 0x0100) s->wid = body + off;
+        else if (ty == 0x0101) s->inst = body + off;
+    }
+    if (!s->wid || !s->inst) goto fail;
+    s->nwaves = be32(s->rbnk + s->wid);
+    if (s->wid + 4 + s->nwaves * 8ull > n) goto fail;
+
+    /* the wave archives its waves are in */
+    uint32_t nw, wtab = ftable(&f, 0x2103, &nw);
+    *err = "The instrument bank's waves couldn't be read";
+    for (uint32_t i = 0; i < s->nwaves; i++) {
+        uint32_t aid = be32(s->rbnk + s->wid + 4 + i * 8);
+        bool have = false;
+        for (int k = 0; k < s->nwarc; k++) have |= s->warc_id[k] == aid;
+        if (have || s->nwarc >= MAX_WARCS || (aid >> 24) != 0x05) continue;
+        uint32_t we = wtab && (aid & 0xFFFFFF) < nw ? fitem(&f, wtab, aid & 0xFFFFFF) : 0;
+        if (!we || !ffile(&f, fu32(&f, we), &at, &n)) continue;
+        uint8_t *a = grab(rd, ctx, size, at, n);
+        if (!a || n < 0x40 || memcmp(a, "FWAR", 4)) {
+            free(a);
+            continue;
+        }
+        s->warc[s->nwarc] = a;
+        s->warc_n[s->nwarc] = n;
+        s->warc_id[s->nwarc++] = aid;
+    }
+    if (!s->nwarc) goto fail;
+
+    if (s->nwaves > MAX_WAVES) s->nwaves = MAX_WAVES;
+    s->waves = calloc(s->nwaves ? s->nwaves : 1, sizeof(wave_t));
+    *err = "Not enough memory";
+    if (!s->waves) goto fail;
+
+    free(f.ib);
+    free(f.sb);
+    s->rng = 0x12345678u;
+    s->label = label;
+    seq_restart(s);
+    *err = NULL;
+    return s;
+fail:
+    free(f.ib);
+    free(f.sb);
+    seq_close(s);
+    return NULL;
+}
+
 /* ---------------------------------------------------------------- voices */
 
 static float db_to_gain(float db10) { return db10 <= ENV_MIN ? 0 : powf(10.0f, db10 / 200.0f); }
@@ -602,10 +1051,9 @@ static void note_on(seq_t *s, int ti, int key, int vel, int32_t len)
         for (int i = 0; i < MAX_VOICES; i++)
             if (s->v[i].on && s->v[i].track == ti) release_voice(&s->v[i]);
 
-    int32_t rg = find_region(s, t->prg, key, vel);
-    if (rg < 0) return;
-    const uint8_t *r = s->rbnk + s->inst + rg;
-    const wave_t *w = get_wave(s, be32(r));
+    region_t r;
+    if (!find_region(s, t->prg, key, vel, &r)) return;
+    const wave_t *w = get_wave(s, r.wave);
     if (!w) return;
 
     /* a free voice, else the quietest releasing one, else the oldest */
@@ -634,16 +1082,11 @@ static void note_on(seq_t *s, int ti, int key, int vel, int32_t len)
     v->track = ti;
     v->w = w;
     v->key = key;
-    v->orig_key = r[0x0C];
-    union {
-        uint32_t u;
-        float f;
-    } tune = { be32(r + 0x10) };
-    float tf = tune.f > 0.01f && tune.f < 100.0f ? tune.f : 1.0f;
-    v->base_ratio = (float)w->rate / SEQ_RATE * tf;
+    v->orig_key = r.key;
+    v->base_ratio = (float)w->rate / SEQ_RATE * r.tune;
 
-    int a = t->att >= 0 ? t->att : r[4], d = t->dec >= 0 ? t->dec : r[5];
-    int su = t->sus >= 0 ? t->sus : r[6], re = t->rel >= 0 ? t->rel : r[7];
+    int a = t->att >= 0 ? t->att : r.a, d = t->dec >= 0 ? t->dec : r.d;
+    int su = t->sus >= 0 ? t->sus : r.su, re = t->rel >= 0 ? t->rel : r.re;
     v->att = attack_table[a & 127];
     v->dec = falling_rate((uint8_t)d);
     v->sus = sustain_table[su & 127];
@@ -651,9 +1094,9 @@ static void note_on(seq_t *s, int ti, int key, int vel, int32_t len)
     v->env = v->att > 0 ? ENV_MIN : 0;
     v->phase = v->att > 0 ? ENV_ATTACK : ENV_DECAY;
 
-    float fv = vel / 127.0f, rv = r[0x0D] / 127.0f;
+    float fv = vel / 127.0f, rv = r.vol / 127.0f;
     v->gain = fv * fv * rv * rv;
-    v->rpan = (int)r[0x0E] - 64;
+    v->rpan = r.pan - 64;
 
     v->len = t->tie ? -1 : len;
     v->age = ++s->age;
@@ -775,13 +1218,13 @@ static void run_track(seq_t *s, int ti)
 {
     track_t *t = &s->t[ti];
     for (int guard = 0; t->on && t->wait <= 0 && guard < 10000; guard++) {
-        int c = cb(s, t), prefix = 0;
+        int c = cb(s, t), prefix = 0, timed = 0;
         bool doit = true;
 
         while (c == 0xA0 || c == 0xA1 || c == 0xA2 || c == 0xA3 || c == 0xA4 || c == 0xA5) {
             if (c == 0xA2) doit = t->cmp;
             else if (c <= 0xA1) prefix = c;
-            /* 0xA3 - 0xA5 (time, ramp versions of a command) are read as the plain command */
+            else timed = c;             /* time, ramp versions of a command: played as the plain command */
             c = cb(s, t);
         }
 
@@ -897,11 +1340,15 @@ static void run_track(seq_t *s, int ti)
                 case 0x94: t->cmp = *v < val; break;
                 case 0x95: t->cmp = *v != val; break;
                 }
+            } else if ((x & 0xF0) == 0x80 || (x & 0xF0) == 0x90) {
+                cb(s, t);               /* later SDKs' variable commands: not played */
+                s16(s, t);
+            } else if ((x & 0xF0) == 0xA0 || (x & 0xF0) == 0xB0) {
+                cb(s, t);
             } else if ((x & 0xF0) == 0xE0) {
                 cb(s, t);
                 cb(s, t);
-            } else
-                t->on = false;          /* unknown: stop rather than misread */
+            }                           /* the rest have no operands */
             break;
         }
         case 0xFC:                      /* loop end */
@@ -936,6 +1383,12 @@ static void run_track(seq_t *s, int ti)
             if (c >= 0xB0 && c <= 0xDF) arg(s, t, A_U8, prefix);
             else t->on = false;
             break;
+        }
+        /* a time prefix's own operand follows the command's */
+        if (timed && c >= 0xB0 && c <= 0xDF) {
+            if (timed == 0xA3) s16(s, t);
+            else if (timed == 0xA4) { s16(s, t); s16(s, t); }
+            else cb(s, t);
         }
     }
 }
