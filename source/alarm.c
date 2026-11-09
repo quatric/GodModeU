@@ -144,8 +144,8 @@ static void draw(int field)
     ui_field(0, 1, ui_cols() - 2, "Alarm clock");
     ui_reset();
     ui_color(C_WHITE, false);
-    ui_field(2, 2, ui_cols() - 4, "At the set time the sound (a beep or white noise) and the disc slot light go off.");
-    ui_field(3, 2, ui_cols() - 4, "Sleep plays white noise now, then stops by itself.");
+    ui_field(2, 2, ui_cols() - 4, "At the set time, a beep (or white noise) and the disc slot light");
+    ui_field(3, 2, ui_cols() - 4, "go off. Sleep plays white noise now, then stops by itself.");
     ui_reset();
 
     int h12 = al.h % 12 ? al.h % 12 : 12;
