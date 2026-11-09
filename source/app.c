@@ -24,7 +24,10 @@
 #include "editor.h"
 #include "risk.h"
 #include "mii.h"
+#include "miiu.h"
+#include "wfskeys.h"
 #include "ftp.h"
+#include "mii.h"
 #include "arcfs.h"
 #include "archive.h"
 #include "saves.h"
@@ -167,10 +170,13 @@ static void reload_keep(void)
 
 /* ---------------------------------------------------------------- drawing */
 
-/* The drive list warns while the NAND is unlocked; inside a drive, only the NAND itself does. */
+/* The drive list warns while any drive is unlocked; inside a drive, only that drive counts. */
 static bool here_risky(void)
 {
-    return risk_unlocked() && (!cwd[0] || vfs_is_protected(vfs_dev_of(cwd)));
+    if (!cwd[0])
+        return risk_any_unlocked();
+    int dev = vfs_dev_of(cwd);
+    return vfs_is_protected(dev) && risk_dev_unlocked(dev);
 }
 
 /* The console's clock, "HH:MM" (Moonshell puts one in its top corner too). */
@@ -360,10 +366,9 @@ static void draw_browser(void)
 
     ui_color(C_CYAN, true);
     if (off && cursor == 0)
-        ui_field(rows - 2, 1, cols - 2,
-                 "A Paste  B Back  1 Clear clipboard  2 Menu  + Copy  - Cut");
+        ui_field(rows - 2, 1, cols - 2, "A Paste  B Back  Y/1 Clear clipboard  X/2 Menu  R/+ Copy  L/- Cut");
     else
-        ui_field(rows - 2, 1, cols - 2, "A Open  B Back  1 Mark  2 Menu  + Copy  - Cut");
+        ui_field(rows - 2, 1, cols - 2, "A Open  B Back  Y/1 Mark  X/2 Menu  R/+ Copy  L/- Cut");
     ui_color(C_WHITE, false);
     ui_field(rows - 1, 1, cols - 2, "HOME System menu    D-Pad L/R Page");
     ui_reset();
@@ -419,8 +424,8 @@ static void draw_home(void)
         char note[56] = "";
         if (d->mounted && vfs_is_protected(devs[idx]))
             snprintf(note, sizeof(note), "%s",
-                     risk_unlocked() ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
-        else if (!d->mounted && d->note[0])
+                     risk_dev_unlocked(devs[idx]) ? "UNLOCKED - BRICK RISK" : "protected (Konami code to edit)");
+        else if (d->note[0])
             snprintf(note, sizeof(note), "%s", d->note);
         else if (!d->mounted)
             snprintf(note, sizeof(note), "not detected");
@@ -744,8 +749,9 @@ static void do_copy_cut(bool cut)
     int n;
     char **t = targets(&n);
     if (!n) return;
-    /* Cutting from the NAND removes files there: ask for the code now. */
-    if (cut && vfs_is_protected(vfs_dev_of(t[0])) && !risk_ensure_unlocked()) {
+    /* Cutting from protected storage removes files there: ask for that drive's code now. */
+    int src_dev = vfs_dev_of(t[0]);
+    if (cut && vfs_is_protected(src_dev) && !risk_ensure_unlocked(src_dev)) {
         free_paths(t, n);
         return;
     }
@@ -818,7 +824,7 @@ static void do_rename(void)
     if (vfs_exists(dst))
         ui_message("ERROR", C_RED, "Something with that name already exists.");
     else if (!vfs_rename(old, dst))
-        ui_message("ERROR", C_RED, "Rename failed.");
+        ui_message("ERROR", C_RED, g_write_err ? g_write_err : "Rename failed.");
     else
         status(C_GREEN, "Renamed.");
     load_dir(cwd, name);
@@ -837,7 +843,7 @@ static void do_mkdir(void)
     if (vfs_exists(dst))
         ui_message("ERROR", C_RED, "Something with that name already exists.");
     else if (!vfs_mkdir(dst))
-        ui_message("ERROR", C_RED, "Could not create the folder.");
+        ui_message("ERROR", C_RED, g_write_err ? g_write_err : "Could not create the folder.");
     else
         vfs_update_space(dev);
     load_dir(cwd, name);
@@ -1159,6 +1165,8 @@ static bool system_menu(void)
         M_FTP_USB,
         M_WIILOAD,
         M_MIIS,
+        M_MIIU,
+        M_KEYS,
         M_DRAW,
         M_MEMOS,
         M_SFX,
@@ -1188,7 +1196,7 @@ static bool system_menu(void)
         int code[26];
         int n = 0;
 
-        if (risk_unlocked() && !risk_forced()) {
+        if (risk_any_unlocked() && !risk_forced()) {
             items[n] = "Lock risky options again";
             code[n++] = M_LOCK;
         }
@@ -1200,6 +1208,8 @@ static bool system_menu(void)
         items[n] = "FTP install server (archives to USB)";              code[n++] = M_FTP_USB;
         items[n] = "Wiiload (receive apps and files)";                  code[n++] = M_WIILOAD;
         items[n] = "Miis";                                              code[n++] = M_MIIS;
+        items[n] = "Export Wii U Miis (.ffsd)";                         code[n++] = M_MIIU;
+        items[n] = "Save Wii U keys for GodModeWii";                    code[n++] = M_KEYS;
         items[n] = "Sketchpad (draw)";                                  code[n++] = M_DRAW;
         items[n] = "Voice memos (record / play)";                       code[n++] = M_MEMOS;
         items[n] = sfx_enabled() ? "Sound effects: ON (select to turn off)"
@@ -1214,7 +1224,9 @@ static bool system_menu(void)
         items[n] = "Back up the NAND / MLC (how to)";                   code[n++] = M_NAND;
         items[n] = "Install Wii U titles (WUP / WUD help)";             code[n++] = M_WUPHELP;
         items[n] = "About / credits";                                   code[n++] = M_ABOUT;
-        items[n] = "Exit to Homebrew Launcher";                         code[n++] = M_LOADER;
+        if (launched_from_hbl()) {
+            items[n] = "Exit to Homebrew Launcher";                     code[n++] = M_LOADER;
+        }
         items[n] = "Exit to Wii U Menu";                                code[n++] = M_WIIMENU;
         items[n] = "Restart console";                                   code[n++] = M_RESTART;
         items[n] = "Power off";                                         code[n++] = M_POWER;
@@ -1258,6 +1270,11 @@ static bool system_menu(void)
         case M_MIIS:
             mii_export();
             return false;
+        case M_MIIU:
+            miiu_export();
+            return false;
+        /* Only shows a box, so B comes back to the SYSTEM menu. */
+        case M_KEYS: wfskeys_save(); break;
         case M_DRAW:
             draw_run();
             reload_keep_safe();

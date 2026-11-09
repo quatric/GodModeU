@@ -1,5 +1,7 @@
 # GodModeU
 
+**By:** quatric & cmyksoda
+
 A text-mode, [GodMode9](https://github.com/d0k3/GodMode9)-style file manager for the **Wii U**, written as a native
 Cafe OS homebrew app. It's a port of [GodModeWii](https://github.com/quatric/GodModeWii), which targets the Wii (and
 the Wii U's vWii mode). No fancy GUI: a text grid on the TV, a cursor and a lot of power. Copy, cut, paste and delete
@@ -13,8 +15,9 @@ the protected storage.
 > console unbootable.
 >
 > * Everything on protected storage is **locked by default**. Copying *from* it is always safe.
-> * The first time you try to change protected storage (delete, paste, cut, rename, new folder, ...) a warning appears and
->   you must enter the **Konami code**. It stays unlocked until you exit or lock it again from the SYSTEM menu.
+> * The first time you try to change a protected drive (delete, paste, cut, rename, new folder, ...) a warning appears and
+>   you must enter the **Konami code**. Each drive (MLC, vWii NAND, Wii U NAND) asks for its own code, and stays unlocked
+>   until you exit or lock it again from the SYSTEM menu.
 > * **Make a full NAND / MLC backup first** and keep a copy off the console.
 > * This software comes with **no warranty**. You are solely responsible for whatever you do with it.
 >
@@ -22,11 +25,14 @@ the protected storage.
 
 ## Status
 
-**Not yet tested on a real Wii U or in an emulator.** It builds with devkitPPC and
-[wut](https://github.com/devkitPro/wut), and the file format readers were checked on a PC against nintoolbox's Wii U test
-files, but everything that talks to the console has only been checked against the wut headers and the tools it follows.
-Expect fixes. [Unverified assumptions](#unverified-assumptions) lists the parts most likely to need them. Reports from
-real hardware are very welcome.
+Version 0.4.0 was tested on a real Wii U with Aroma: the drives below (SD, a WFS USB drive, FAT32, NTFS and ext4 USB drives,
+MLC and both NANDs), copying, the GamePad, a Wii Remote, the FTP server, Export Miis and Save Wii U keys. This version adds
+GodModeWii's code, libwiiuinput, the Wii U format viewers and title installing on top; the format readers were checked on a PC
+against nintoolbox's Wii U test files, the rest only against the wut headers and the tools it follows. What hasn't been tried on
+a console yet is listed under [Not yet tested](#not-yet-tested). Reports from real hardware are very welcome.
+
+USB drives that aren't Wii U-formatted, both NANDs and parts of the internal storage are reached through **Aroma's Mocha**,
+so they need Aroma.
 
 ## What's new in this version
 
@@ -40,21 +46,18 @@ of that it has things only a Wii U can do:
 * **Wii U file formats**: see [What it can open](#what-it-can-open).
 * **Installing Wii U titles** from WUP folders and **WUD / WUX disc images**: see [Installing Wii U titles](#installing-wii-u-titles).
 * **NAND / MLC backup instructions** in the HOME menu: see [NAND backup](#nand-backup).
-* Fixed mount points: USB drives are `/vol/storage_usb01` / `02` (the old `/vol/external01` was the SD card) and the vWii NAND is
-  `/vol/storage_slccmpt01`. The Wii U system NAND (SLC) is now a drive too.
 
 ## Drives
 
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/`, `usb2:/` | Wii U formatted (WFS) drives as Cafe OS mounts them (`/vol/storage_usb01`, `02`) |
-| Wii U storage (MLC) | `mlc:/` | the console's internal storage (`/vol/storage_mlc01`). Protected: Konami code to change anything |
-| vWii NAND (SLCCMPT) | `nand:/` | the vWii NAND (`/vol/storage_slccmpt01`). Protected |
-| Wii U system NAND (SLC) | `slc:/` | `/vol/system`. Protected |
+| USB drives | `usb1:/` ... `usb8:/` | Wii U-formatted (WFS) drives, which Cafe OS mounts, and FAT32 / exFAT / NTFS drives, which GodModeU mounts itself (read / write; the 4 GiB file limit applies to FAT32 only), plus ext2 / ext3 / ext4 drives, read-only. An NTFS drive Windows didn't shut down fully is left alone. Further FAT32 / exFAT / NTFS partitions take the next free `usbN:` entry |
+| Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
+| vWii NAND (SLCCMPT) | `nand:/` | the vWii's NAND: System Menu, IOS, Wii channels and saves. Protected. Mounted through Aroma's Mocha |
+| Wii U NAND (SLC) | `slc:/` | the Wii U's own system NAND. Protected: Konami code, plus a red warning the first time you change it in a session, because a mistake there can stop the Wii U from booting at all |
 
-The protected drives only appear when the app may mount them (Aroma with the Mocha / MochaPayload module). Remount drives
-from the HOME menu after inserting or removing one.
+Each protected drive asks for its own Konami code. Remount drives from the HOME menu after inserting or removing one.
 
 ## What it can open
 
@@ -120,9 +123,14 @@ GodModeU needs for WUD images.
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
   off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`).
 * **HOME menu**: lock the protected drives again, remount, FTP server, FTP install server, Wiiload (homebrew `.rpx` / `.wuhb`
-  pushed over the network is saved to `sd:/wiiu/apps/`), export all vWii saves, Miis, sketchpad, voice memos, sound effects,
+  pushed over the network is saved to `sd:/wiiu/apps/`), export all vWii saves, Miis, Wii U Mii export, Save Wii U keys, sketchpad, voice memos, sound effects,
   alarm clock, calculator, clock and calendar, themes, the NAND backup and title install help, credits, exit to the Homebrew
   Launcher / Wii U Menu, restart, power off.
+* **Export Wii U Miis** (HOME menu): pick Miis by name and save them as `<Name>.ffsd` in `/savemiis/` on the SD card or a
+  USB drive (the format Mii Studio loaders and PC Mii tools read). The Mii database is only read.
+* **Save Wii U keys for GodModeWii** (HOME menu): writes this console's two WFS keys to `sd:/wfs/`, so GodModeWii can read
+  the Wii U drive from vWii. They're unique to your console: keep them private.
+* **Aroma's plugin menu** opens over the app with its usual combo (L + Down + Minus).
 * **FTP server** and **FTP install server**: see [FTP server](#ftp-server).
 
 ### Controls
@@ -155,25 +163,25 @@ These depend on the Wii's IOS, the Wii's hardware or GX, and have no equivalent 
 ## FTP server
 
 SYSTEM → *FTP server (read-only)* or *(read/write)* opens a status screen with the address, the user name (`godmode`) and a
-fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, ...).
+fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, `/slc`, ...).
 
+* It listens on port 21, or on **2121** when Aroma's ftpiiu already answers on 21.
 * **Login is required** by default (a random password per run); the status screen can switch to an open login for a trusted LAN.
   Failed logins are throttled and a burst of them locks the server for a minute.
 * **LAN only**: peers outside private / link-local ranges are refused.
 * **No FTP bounce / hijack**: `PORT` must point back at the client (port >= 1024) and passive data connections must come from the client's IP.
 * **Sandboxed paths**: every path is canonicalised inside the virtual root.
-* **Read-only by default.** Changes to MLC / NAND need the Konami code on the console.
+* **Read-only by default.** Changes to MLC / NAND need the Konami code on the console (and the Wii U NAND's warning).
 * **Safe uploads**: files go to a temporary name and only replace the target when complete.
 * `RMD` only removes empty folders; nothing is deleted recursively over the network.
 
 The **FTP install server** unpacks uploaded `.zip`, `.7z` and `.rar` files onto the SD card or the first USB drive.
 
-## Unverified assumptions
+## Not yet tested
 
 These could not be checked without a console. Each is a constant or a short function:
 
-* **Mount points**: `/vol/storage_usb01` / `02` for USB, `/vol/storage_mlc01`, `/vol/storage_slccmpt01` and `/vol/system`
-  (`source/vfs.c`).
+* exFAT USB drives, more than one non-WFS USB drive at once, and the WFS image reader on a dump of a real Wii U drive.
 * **Screen**: a 640x480 framebuffer (GodModeWii's) drawn 1.5x on the TV and 1:1 on the GamePad through OSScreen (`source/wiiu/screen.c`).
 * **Sound**: GodModeWii's ASND voices mixed in software onto two AX voices (`source/wiiu/asnd.c`).
 * **Installing**: the MCP install path `/vol/app_sd/...` for the SD card, as WUP Installer GX2 uses it (`source/wiiu_install.c`).
@@ -182,7 +190,8 @@ These could not be checked without a console. Each is a constant or a short func
 
 ## Installation
 
-* **Aroma**: copy `GodModeU.wuhb` to `sd:/wiiu/apps/`.
+* **Aroma**: copy `GodModeU.wuhb` to `sd:/wiiu/apps/`. Aroma is needed for USB drives the Wii U didn't format and for both
+  NANDs (see [Status](#status)).
 * **Homebrew Launcher**: copy the `GodModeU` folder from the release zip (`GodModeU.rpx`, `meta.xml`, `icon.png`)
   to `sd:/wiiu/apps/GodModeU/`.
 
@@ -195,6 +204,10 @@ You need [devkitPro](https://devkitpro.org/) with devkitPPC, wut and these portl
 ```sh
 dkp-pacman -S wut wut-tools ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-libvorbisidec ppc-libogg ppc-bzip2 ppc-zlib
 git submodule update --init --recursive
+./scripts/build_libmocha.sh   # once each: libmocha, libdvm (FAT32 / exFAT), libntfs and lwext4 (ext2/3/4) into ./portlibs
+./scripts/build_libdvm.sh
+./scripts/build_libntfs.sh
+./scripts/build_libext4.sh
 export DEVKITPRO=/opt/devkitpro DEVKITPPC=/opt/devkitpro/devkitPPC
 make
 ```
@@ -217,5 +230,10 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **[ftpii](https://code.google.com/p/ftpii/source/list)** by Joseph Jordan and contributors: the FTP idea.
 * **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors: the file-manager reference.
 * **wfslib** and **wfs-tools** by koolkdev: the WFS layout.
+* **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches the USB drive, internal storage and both NANDs through Aroma's Mocha.
+* **[lwext4](https://github.com/gkostka/lwext4)** by Grzegorz Kostka (GPL-2.0 / BSD; Extrems' big-endian fork) with Extrems' libdvm
+  ext4 driver (ZPL-2.1), ported and made read-only by `scripts/build_libext4.sh` and `scripts/ext4_driver.patch`.
+* **[libntfs](https://github.com/extremscorner/libntfs)** by Extrems and contributors, on **NTFS-3G** by Tuxera and the NTFS-3G authors (GPL-2.0): NTFS USB drives.
+* **[libdvm](https://github.com/devkitPro/libdvm)** by fincs / devkitPro (ZPL-2.1) with **[FatFs](https://github.com/devkitPro/fatfs-mod)** by ChaN: FAT32 and exFAT USB drives.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
 * **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside).

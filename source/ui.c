@@ -61,6 +61,11 @@ void ui_present(void)
     screen_flush();
 }
 
+void ui_plugin_menu(void)
+{
+    screen_plugin_menu();
+}
+
 int ui_cols(void) { return g_cols; }
 int ui_rows(void) { return g_rows; }
 

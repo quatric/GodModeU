@@ -10,19 +10,25 @@
 #include "input.h"
 #include "vfs.h"
 
-static bool g_unlocked;
+static u32 g_unlocked;      /* one bit per protected drive, so each asks for its own code */
 static bool g_forced;       /* persistent "always unlocked" switch */
+static bool g_slc_warned;   /* the Wii U NAND's own warning, once per session */
 
-bool risk_unlocked(void) { return g_unlocked || g_forced; }
+bool risk_any_unlocked(void) { return g_unlocked || g_forced; }
+bool risk_dev_unlocked(int dev) { return g_forced || (dev >= 0 && (g_unlocked & (1u << dev))); }
+bool risk_dev_writable(int dev)
+{
+    return !vfs_is_protected(dev) || (risk_dev_unlocked(dev) && (dev != DEV_SLC || g_slc_warned));
+}
 bool risk_forced(void) { return g_forced; }
-void risk_lock(void) { g_unlocked = false; }
+void risk_lock(void) { g_unlocked = 0; g_slc_warned = false; }
 
 static const u32 KONAMI[10] = {
     WPAD_BUTTON_UP, WPAD_BUTTON_UP, WPAD_BUTTON_DOWN, WPAD_BUTTON_DOWN,
     WPAD_BUTTON_LEFT, WPAD_BUTTON_RIGHT, WPAD_BUTTON_LEFT, WPAD_BUTTON_RIGHT,
     WPAD_BUTTON_B, WPAD_BUTTON_A,
 };
-static const char *const KONAMI_GLYPH[10] = { "UP", "UP", "DN", "DN", "LT", "RT", "LT", "RT", " B", " A" };
+static const char *const KONAMI_GLYPH[10] = { "UP", "UP", "DOWN", "DOWN", "LEFT", "RIGHT", "LEFT", "RIGHT", "B", "A" };
 
 /* Full-screen warning followed by the Konami code. `lines` are the warning
  * text, `title` the red banner. HOME cancels. */
@@ -45,11 +51,18 @@ static void draw_gate(const char *title, const char *const *lines, int n, int pr
     ui_field(r++, 1, cols - 2, "If you understand and accept this, enter the code:");
     r++;
 
-    int left = (cols - 10 * 5) / 2;
-    ui_goto(r, left);
+    int width = -1;
+    for (int i = 0; i < 10; i++)
+        width += (int)strlen(KONAMI_GLYPH[i]) + 3;
+    ui_goto(r, (cols - width) / 2);
     for (int i = 0; i < 10; i++) {
-        ui_color(i < progress ? C_GREEN : C_WHITE, i < progress);
-        printf("[%s] ", KONAMI_GLYPH[i]);
+        ui_reset();
+        if (i < progress)
+            ui_bg(C_GREEN);
+        ui_color(C_WHITE, true);
+        printf("[%s]", KONAMI_GLYPH[i]);
+        ui_reset();
+        putchar(' ');
     }
     ui_reset();
     ui_color(C_CYAN, true);
@@ -79,13 +92,16 @@ static bool konami_gate(const char *title, const char *const *lines, int n)
     return true;
 }
 
-/* Asked the first time something tries to change protected storage. */
-bool risk_ensure_unlocked(void)
+/* Asked the first time something tries to change this protected drive. */
+bool risk_ensure_unlocked(int dev)
 {
-    if (g_unlocked || g_forced)
+    if (risk_dev_unlocked(dev))
         return true;
-    static const char *const lines[] = {
-        "You are about to change the Wii U's protected storage.",
+    char first[96];
+    snprintf(first, sizeof(first), "You are about to change the %s, part of the Wii U's protected storage.",
+             g_devs[dev].name);
+    const char *const lines[] = {
+        first,
         "",
         "* A wrong move here can PERMANENTLY BRICK your console.",
         "* Deleting system titles, tickets or the vWii NAND is fatal.",
@@ -93,20 +109,59 @@ bool risk_ensure_unlocked(void)
         "* The vWii NAND is just as fragile as a Wii's.",
         "* No warranty. You are solely responsible for what you do.",
         "* Not sure what a file does? Leave it alone.",
+        "* The code unlocks this drive only, until you exit or lock it again.",
     };
-    if (!konami_gate("RISKY OPTION - READ THIS", lines, 8))
+    if (!konami_gate("RISKY OPTION - READ THIS", lines, sizeof(lines) / sizeof(lines[0])))
         return false;
-    g_unlocked = true;
+    g_unlocked |= 1u << dev;
     return true;
+}
+
+/* A broken vWii NAND can be repaired from the Wii U side, but a broken Wii U NAND may leave
+ * nothing that boots, so it warns once more, even in forced mode. */
+static bool slc_warning(void)
+{
+    static const char *const lines[] = {
+        "You are about to change the Wii U NAND (SLC): the Wii U's own system, not the vWii's.",
+        "",
+        "* It holds IOSU, the system titles, the boot settings and scfm.img (the MLC's cache).",
+        "* If a change here goes wrong, the Wii U may not start at all, so Aroma can't fix it.",
+        "* A vWii NAND mistake can be repaired from the Wii U side. This one may not be.",
+        "* Recovery then needs ISFShax installed beforehand, or a hardware mod (de_Fuse).",
+        "* Back up the SLC first, and only change files you know the purpose of.",
+        "",
+        "This warning appears once per session, even in forced risky mode.",
+    };
+    int cols = ui_cols(), rows = ui_rows();
+    ui_clear();
+    ui_bg(C_RED);
+    for (int r = 0; r < rows; r++)
+        ui_fill(r, 0, cols, ' ');
+    ui_field(1, 2, cols - 4, "!!!  WII U NAND  -  YOUR WII U MAY NEVER START AGAIN  !!!");
+    for (int i = 0; i < (int)(sizeof(lines) / sizeof(lines[0])); i++)
+        ui_field(4 + i, 2, cols - 4, "%s", lines[i]);
+    ui_field(rows - 3, 2, cols - 4, "A  I have a backup, change it          B  Cancel");
+    ui_reset();
+    for (;;) {
+        u32 p = DetectInput(IN_DOWN);
+        if (p & WPAD_BUTTON_A)
+            return true;
+        if (p & (WPAD_BUTTON_B | WPAD_BUTTON_HOME))
+            return false;
+    }
 }
 
 bool risk_authorize(const char *path, const char *what)
 {
     (void)what;
-    if (!vfs_is_protected(vfs_dev_of(path)))
+    int dev = vfs_dev_of(path);
+    if (!vfs_is_protected(dev))
         return true;
-    /* One Konami code per session is enough; it asks the first time. */
-    return risk_ensure_unlocked();
+    if (!risk_ensure_unlocked(dev))
+        return false;
+    if (dev == DEV_SLC && !g_slc_warned)
+        g_slc_warned = slc_warning();
+    return dev != DEV_SLC || g_slc_warned;
 }
 
 /* ---------------------------------------------------------------- forced mode */

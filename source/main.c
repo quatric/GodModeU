@@ -10,6 +10,7 @@
 #include <coreinit/time.h>
 #include <whb/proc.h>
 #include <sysapp/launch.h>
+#include <sndcore2/core.h>
 
 #include "app.h"
 #include "ui.h"
@@ -22,7 +23,7 @@
 #include "alarm.h"
 
 /* The same title IDs WHBProcInit treats as the Homebrew Launcher. */
-static bool launched_from_hbl(void)
+bool launched_from_hbl(void)
 {
     uint64_t id = OSGetTitleID();
     return id == 0x0005000013374842ULL || id == 0x000500101004A000ULL ||
@@ -37,6 +38,9 @@ int main(int argc, char **argv)
     /* HOME opens the app's own SYSTEM menu; this must come before ProcUI starts. */
     OSEnableHomeButtonMenu(FALSE);
     WHBProcInit();
+    /* Starting the sound system silences the loading music, which otherwise keeps looping. */
+    AXInit();
+    AXQuit();
     ui_init();
     ui_splash("Starting...");
 
@@ -56,7 +60,7 @@ int main(int argc, char **argv)
         else if (risk_forced())
             ui_message("RISKY MODE FORCED ON", C_RED,
                        "Dangerous permissions are now ALWAYS enabled, and stay that way every time this program starts. "
-                       "Nothing will ask for a warning or code first.");
+                       "Nothing will ask for a warning or code first, except a one-time warning for the Wii U NAND.");
         else
             ui_message("RISKY MODE OFF", C_GREEN, "Dangerous permissions are no longer forced. Risky changes ask for the warning and code again.");
     }

@@ -32,4 +32,7 @@ void screen_vsync(void);
 /* Shows the framebuffer now, from the calling thread (before a long blocking call). */
 void screen_flush(void);
 
+/* Lets Aroma's plugin menu (L + Down + Minus) open over the app, then redraws. */
+void screen_plugin_menu(void);
+
 #endif

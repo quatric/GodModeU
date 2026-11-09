@@ -49,6 +49,12 @@ static u64 now_ms(void) { return ticks_to_millisecs(gettime()); }
 static bool g_auto;
 static int g_auto_policy;
 #endif
+/* The SD card and FAT32 USB drives have FAT's 4 GiB file size limit; WFS and exFAT drives don't. */
+static bool fat_volume(const char *path)
+{
+    int d = vfs_dev_of(path);
+    return d == DEV_SD || (d >= 0 && g_devs[d].fat);
+}
 
 static void fail(const char *what, const char *path)
 {
@@ -150,6 +156,8 @@ static bool prog_tick(bool force)
     } else {
         prog_paint(false);
     }
+    /* The screen only refreshes when the input layer waits for a button, which a copy never does. */
+    ui_present();
     if (input_cancel_held()) {
         X.cancelled = true;
     }
@@ -163,7 +171,7 @@ static void begin(const char *title, u64 bytes, u32 files)
     X.total_bytes = bytes;
     X.files_total = files;
     X.start_ms = X.last_ms = now_ms();
-    X.buf = memalign(32, CHUNK);
+    X.buf = memalign(64, CHUNK);    /* FSA reads and writes straight from 64-byte-aligned buffers */
 #ifdef GMW_AUTOTEST
     if (g_auto)
         X.policy = g_auto_policy;
@@ -340,15 +348,14 @@ static bool copy_file(const char *src, const char *dst)
     }
     X.file_total = in.size;
     int dd = vfs_dev_of(dst);
-    /* the SD card is FAT32 on the Wii U */
-    if (dd == DEV_SD && in.size > 0xFFFFFFFFULL) {
+    if (fat_volume(dst) && in.size > 0xFFFFFFFFULL) {
         vfs_close(&in);
         fail("Too big for FAT (4 GiB file limit)", dst);
         return false;
     }
     if (!vfs_open_write(&out, dst)) {
         vfs_close(&in);
-        fail("Cannot create", dst);
+        fail(g_write_err ? g_write_err : "Cannot create", dst);
         return false;
     }
     vfs_unbuffered(&in);
@@ -488,7 +495,7 @@ static bool copy_tree(const char *src, const char *dst_dir, const char *name)
             return false;
         }
     } else if (!vfs_mkdir(dst)) {
-        fail("Cannot create folder", dst);
+        fail(g_write_err ? g_write_err : "Cannot create folder", dst);
         return false;
     }
 
@@ -551,7 +558,7 @@ static bool delete_tree(const char *path)
             return ok;                  /* something inside stays, so the folder does too */
     }
     if (!vfs_remove(path, is_dir)) {
-        fail("Cannot delete", path);
+        fail(g_write_err ? g_write_err : "Cannot delete", path);
         return false;
     }
     X.files_done++;
@@ -656,7 +663,7 @@ static void summary(const char *verb, bool ok)
         summary_pages("FINISHED WITH ERRORS", msg);
         ui_alert_window(false);
     } else if (!ok || X.cancelled || X.fails)
-        ui_message(X.cancelled ? "CANCELED" : "FINISHED WITH ERRORS", C_YELLOW, msg);
+        ui_message(X.cancelled ? "CANCELLED" : "FINISHED WITH ERRORS", C_YELLOW, msg);
     else
         ui_message("DONE", C_GREEN, msg);
 }

@@ -6,6 +6,14 @@ endif
 export DEVKITPPC ?= $(DEVKITPRO)/devkitPPC
 export WUT_ROOT ?= $(DEVKITPRO)/wut
 
+# wut_rules reads these when it is included, so they must come first.
+APP_NAME		:=	GodModeU
+APP_SHORTNAME	:=	GodModeU
+APP_AUTHOR		:=	quatric
+APP_ICON		:=	$(CURDIR)/data/icon.png
+APP_TV_SPLASH	:=	$(CURDIR)/data/tv-splash.png
+APP_DRC_SPLASH	:=	$(CURDIR)/data/drc-splash.png
+
 include $(WUT_ROOT)/share/wut_rules
 
 TARGET		:=	GodModeU
@@ -17,19 +25,16 @@ DATA		:=	res
 # Cafe OS (source/wiiu does the work behind them).
 INCLUDES	:=	source source/compat source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg $(UNARR)
 
-APP_NAME		:=	GodModeU
-APP_SHORTNAME	:=	GodModeU
-APP_AUTHOR		:=	quatric & cmyksoda
-APP_ICON		:=	apps/GodModeU/icon.png
-
 # libwiiuinput: every controller, pen tablets / uDraw (drawing) and microphones (voice memos).
 CFLAGS	= -g -O2 -Wall -Wno-unused-function $(MACHDEP) $(INCLUDE) -D__WIIU__ -DGMU -DHAVE_7Z -DHAVE_TABLET -DHAVE_MIC
 CXXFLAGS	=	$(CFLAGS)
 LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP) -Wl,-Map,$(notdir $*.map)
 
+# libmocha (C++, so libstdc++), libdvm (FAT32 / exFAT), libntfs and lwext4 come from scripts/build_lib*.sh.
 # whb, coreinit, vpad, padscore, sndcore2, nsysnet, nn::ac, mcp and the FSA devoptab all live in libwut.
-LIBS	:=	-linput-wiiu -lpng16 -ljpeg -lwebp -lsharpyuv -lvorbisidec -logg -lbz2 -lz -lwut -lm
-LIBDIRS	:=	$(CURDIR)/libwiiuinput $(PORTLIBS) $(WUT_ROOT)
+LIBS	:=	-linput-wiiu -lext4 -lntfs -ldvm -lmocha -lpng16 -ljpeg -lwebp -lsharpyuv -lvorbisidec -logg -lbz2 -lz -lstdc++ -lwut -lm
+LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
+			$(CURDIR)/portlibs/ntfs $(CURDIR)/portlibs/ext4 $(PORTLIBS) $(WUT_ROOT)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 

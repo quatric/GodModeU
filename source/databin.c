@@ -581,7 +581,7 @@ void databin_import(const char *path)
              d.name[0] ? "\"" : "", d.name, d.name[0] ? "\"\n" : "", (unsigned)(d.tid >> 32), (unsigned)d.tid, id,
              (unsigned)d.nfiles);
     if (!ui_confirm("IMPORT SAVE", C_YELLOW, q)) goto done;
-    if (!risk_ensure_unlocked()) goto done;
+    if (!risk_ensure_unlocked(vfs_dev_of("nand:/"))) goto done;
 
     char where[VFS_PATH_MAX] = "";
     u32 before = 0;

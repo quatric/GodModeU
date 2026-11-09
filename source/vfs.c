@@ -8,24 +8,29 @@
 #include <sys/stat.h>
 #include <coreinit/filesystem_fsa.h>
 #include <whb/sdcard.h>
+#include <mocha/mocha.h>
 
 #include "vfs.h"
 #include "arcfs.h"
 #include "ui.h"
+#include "risk.h"
+#include "usbfat.h"
+#include "usbntfs.h"
+#include <sys/statvfs.h>
 
 vfs_dev g_devs[DEV_COUNT] = {
-    [DEV_SD]   = { "sd:",   "sd:/",   "SD Card",                 "SD",   true },
-    [DEV_USB0] = { "usb1:", "usb1:/", "USB Drive 1 (Wii U)",     "USB1", false },
-    [DEV_USB1] = { "usb2:", "usb2:/", "USB Drive 2 (Wii U)",     "USB2", false },
-    [DEV_USB2] = { "usb3:", "usb3:/", "USB Drive 3",             "USB3", false },
-    [DEV_USB3] = { "usb4:", "usb4:/", "USB Drive 4",             "USB4", false },
-    [DEV_USB4] = { "usb5:", "usb5:/", "USB Drive 5",             "USB5", false },
-    [DEV_USB5] = { "usb6:", "usb6:/", "USB Drive 6",             "USB6", false },
-    [DEV_USB6] = { "usb7:", "usb7:/", "USB Drive 7",             "USB7", false },
-    [DEV_USB7] = { "usb8:", "usb8:/", "USB Drive 8",             "USB8", false },
-    [DEV_MLC]  = { "mlc:",  "mlc:/",  "Wii U Storage (MLC)",     "MLC",  true },
-    [DEV_NAND] = { "nand:", "nand:/", "vWii NAND (SLCCMPT)",     "NAND", true },
-    [DEV_SLC]  = { "slc:",  "slc:/",  "Wii U System NAND (SLC)", "SLC",  false },
+    { "sd:",   "sd:/",   "SD Card",          "SD",   true,  false, false, 0, 0 },
+    { "usb1:", "usb1:/", "USB Drive 1",      "USB1", false, false, false, 0, 0 },
+    { "usb2:", "usb2:/", "USB Drive 2",      "USB2", false, false, false, 0, 0 },
+    { "usb3:", "usb3:/", "USB Drive 3",      "USB3", false, false, false, 0, 0 },
+    { "usb4:", "usb4:/", "USB Drive 4",      "USB4", false, false, false, 0, 0 },
+    { "usb5:", "usb5:/", "USB Drive 5",      "USB5", false, false, false, 0, 0 },
+    { "usb6:", "usb6:/", "USB Drive 6",      "USB6", false, false, false, 0, 0 },
+    { "usb7:", "usb7:/", "USB Drive 7",      "USB7", false, false, false, 0, 0 },
+    { "usb8:", "usb8:/", "USB Drive 8",      "USB8", false, false, false, 0, 0 },
+    { "mlc:",  "mlc:/",  "Wii U Storage (MLC)", "MLC",  true,  false, false, 0, 0 },
+    { "nand:", "nand:/", "vWii NAND (SLCCMPT)", "NAND", true,  false, false, 0, 0 },
+    { "slc:",  "slc:/",  "Wii U NAND (SLC)", "SLC",  true,  false, false, 0, 0 },
     /* GodModeWii's Wii-only drives: never mounted on the Wii U */
     [DEV_GCA]     = { "gca:",     "gca:/",     "SD Gecko A",     "GCA" },
     [DEV_GCB]     = { "gcb:",     "gcb:/",     "SD Gecko B",     "GCB" },
@@ -41,6 +46,8 @@ bool g_is_vwii, g_is_dolphin, g_nand_full = true;
 const char *g_write_err;
 static FSAClientHandle fsa_client;
 static bool fsa_ready;
+static bool mocha_ready;
+static char mocha_name[DEV_COUNT][32];  /* the Mocha devoptab a drive is reached through, if any */
 
 /* ---------------------------------------------------------------- paths */
 
@@ -76,7 +83,8 @@ bool vfs_is_archive(const char *path)
 
 bool vfs_is_readonly(const char *path)
 {
-    return arcfs_is_path(path);
+    int dev = vfs_dev_of(path);
+    return arcfs_is_path(path) || (dev >= 0 && g_devs[dev].readonly);
 }
 
 const char *vfs_dev_root(int dev)
@@ -101,18 +109,25 @@ static bool to_real(const char *path, char *out, size_t outsz)
     return n > 0 && (size_t)n < outsz;
 }
 
-/* The FSA calls want "/vol/..." without the devoptab prefix. */
-static const char *fsa_path(const char *real)
+/* The FSA calls want "/vol/..." without the devoptab prefix. Mocha devoptabs are named after
+ * their volume: "storage_usb01:/x" -> "/vol/storage_usb01/x". */
+static const char *fsa_path(const char *real, char *buf, size_t n)
 {
-    return strncmp(real, "fs:", 3) == 0 ? real + 3 : real;
+    if (strncmp(real, "fs:", 3) == 0)
+        return real + 3;
+    const char *colon = strchr(real, ':');
+    if (!colon)
+        return real;
+    snprintf(buf, n, "/vol/%.*s%s", (int)(colon - real), real, colon + 1);
+    return buf;
 }
 
 bool vfs_os_path(const char *path, char *out, size_t outsz)
 {
-    char real[VFS_PATH_MAX];
+    char real[VFS_PATH_MAX], buf[VFS_PATH_MAX];
     if (arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
         return false;
-    int n = snprintf(out, outsz, "%s", fsa_path(real));
+    int n = snprintf(out, outsz, "%s", fsa_path(real, buf, sizeof(buf)));
     return n > 0 && (size_t)n < outsz;
 }
 
@@ -213,44 +228,176 @@ static void mount_sd(void)
         snprintf(d->note, sizeof(d->note), "no SD card (insert one, then Remount)");
 }
 
-/* USB drives the Wii U formatted (WFS) are mounted by Cafe OS as /vol/storage_usb01 and 02. A FAT
- * USB drive isn't mounted by the system at all; copy through the SD card or FTP instead. */
+/* An app may lack permission for a system volume. Aroma's Mocha can then reach it through an
+ * unlocked client, as a devoptab named after the volume. */
+static bool mocha_try(const char *vol, const char *devpath)
+{
+    char mnt[32], root[32];
+    snprintf(mnt, sizeof(mnt), "/vol/%s", vol);
+    snprintf(root, sizeof(root), "%s:/", vol);
+    if (Mocha_MountFS(vol, devpath, mnt) != MOCHA_RESULT_SUCCESS)
+        return false;
+    /* Mocha registers the devoptab even when nothing is mounted there. */
+    if (dir_exists(root))
+        return true;
+    Mocha_UnmountFS(vol);
+    return false;
+}
+
+/* devpath mounts the volume when nothing has yet; Cafe OS leaves both NANDs unmounted. */
+static bool attach_vol(int dev, const char *vol, const char *devpath)
+{
+    vfs_dev *d = &g_devs[dev];
+    snprintf(d->real, sizeof(d->real), "fs:/vol/%s", vol);
+    if (dir_exists(d->real))
+        return true;
+    if (mocha_ready && (mocha_try(vol, NULL) || (devpath && mocha_try(vol, devpath)))) {
+        snprintf(mocha_name[dev], sizeof(mocha_name[dev]), "%s", vol);
+        snprintf(d->real, sizeof(d->real), "%s:", vol);
+        return true;
+    }
+    d->real[0] = '\0';
+    return false;
+}
+
+static bool usbfat_on[USB_SLOTS], usbntfs_on[USB_SLOTS];
+static char usb_dev_name[USB_SLOTS][32];     /* "USB Drive N", or which drive a further partition is on */
+
+static void detach_all(void)
+{
+    for (int i = 0; i < DEV_COUNT; i++) {
+        if (mocha_name[i][0])
+            Mocha_UnmountFS(mocha_name[i]);
+        mocha_name[i][0] = '\0';
+    }
+    for (int i = 0; i < USB_SLOTS; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "usbfat%d", i + 1);
+        if (usbfat_on[i])
+            usbfat_unmount(name);
+        usbfat_on[i] = false;
+        snprintf(name, sizeof(name), "usbntfs%d", i + 1);
+        if (usbntfs_on[i])
+            usbntfs_unmount(i, name);
+        usbntfs_on[i] = false;
+    }
+}
+
+/* Cafe OS mounts a Wii U-formatted drive as /vol/storage_usb01; external01 is the SD card. */
 static void mount_usb(void)
 {
     for (int i = 0; i < USB_SLOTS; i++) {
+        char vol[16];
         vfs_dev *d = &g_devs[DEV_USB0 + i];
-        d->mounted = false;
-        d->real[0] = '\0';
+        snprintf(vol, sizeof(vol), "storage_usb%02d", i + 1);
+        d->mounted = attach_vol(DEV_USB0 + i, vol, NULL);
+        snprintf(usb_dev_name[i], sizeof(usb_dev_name[i]), "USB Drive %d", i + 1);
+        d->name = usb_dev_name[i];
         d->note[0] = '\0';
-        if (i >= 2)
-            continue;
-        char vol[40];
-        snprintf(vol, sizeof(vol), "fs:/vol/storage_usb%02d", i + 1);
-        if (dir_exists(vol)) {
-            snprintf(d->real, sizeof(d->real), "%s", vol);
+        d->fat = false;
+        d->readonly = false;
+        d->always_show = false;
+        /* Only a slot Cafe OS didn't mount as WFS is opened raw. */
+        char name[16];
+        snprintf(name, sizeof(name), "usbfat%d", i + 1);
+        int fs = !d->mounted && fsa_ready && mocha_ready ? usbfat_mount(fsa_client, i, name) : USBFAT_NONE;
+        if (fs != USBFAT_NONE) {
+            usbfat_on[i] = true;
             d->mounted = true;
+            d->fat = fs == USBFAT_FAT;
+            d->readonly = fs >= USBFAT_EXT2;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            if (fs >= USBFAT_EXT2)
+                snprintf(d->note, sizeof(d->note), "ext%d  read-only", fs - USBFAT_EXT2 + 2);
+            else
+                snprintf(d->note, sizeof(d->note), "%s", fs == USBFAT_EXFAT ? "exFAT" : "FAT32");
+        }
+        snprintf(name, sizeof(name), "usbntfs%d", i + 1);
+        int nt = !d->mounted && fsa_ready && mocha_ready ? usbntfs_mount(fsa_client, i, name) : USBNTFS_NONE;
+        if (nt == USBNTFS_MOUNTED) {
+            usbntfs_on[i] = true;
+            d->mounted = true;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            snprintf(d->note, sizeof(d->note), "NTFS");
+        } else if (nt != USBNTFS_NONE) {
+            d->always_show = true;
+            snprintf(d->note, sizeof(d->note), "%s",
+                     nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
         }
     }
 }
 
-static void mount_one(int dev, const char *vol, const char *why)
+/* The first partition of a drive is the drive itself; every further FAT32 / exFAT / NTFS partition takes
+ * the next free usbN: entry, listed as "USB Drive 1, part. 2". */
+static void mount_usb_extras(void)
 {
-    vfs_dev *d = &g_devs[dev];
-    d->real[0] = '\0';
-    d->note[0] = '\0';
-    d->mounted = dir_exists(vol);
-    if (d->mounted)
-        snprintf(d->real, sizeof(d->real), "%s", vol);
-    else
-        snprintf(d->note, sizeof(d->note), "%s", why);
+    for (int i = 0; i < USB_SLOTS; i++) {
+        if (!usbfat_on[i] && !usbntfs_on[i])
+            continue;
+        vfs_dev *main = &g_devs[DEV_USB0 + i];
+        if (main->readonly)
+            continue;                               /* ext: leave the rest alone */
+        usbfat_part parts[USBFAT_MAX_PARTS];
+        int n = usbfat_list_parts(fsa_client, i, parts, USBFAT_MAX_PARTS);
+        bool main_ntfs = usbntfs_on[i], skipped = false;
+        for (int p = 0; p < n; p++) {
+            /* the first partition of the main volume's kind is the one already mounted */
+            if (!skipped && (parts[p].kind == PART_NTFS) == main_ntfs) {
+                skipped = true;
+                continue;
+            }
+            int k = -1;
+            for (int j = i + 1; j < USB_SLOTS; j++) {
+                vfs_dev *c = &g_devs[DEV_USB0 + j];
+                if (!c->mounted && !c->always_show && !c->note[0]) {
+                    k = j;
+                    break;
+                }
+            }
+            if (k < 0)
+                return;
+            vfs_dev *d = &g_devs[DEV_USB0 + k];
+            char name[16];
+            bool ok;
+            if (parts[p].kind == PART_NTFS) {
+                snprintf(name, sizeof(name), "usbntfs%d", k + 1);
+                ok = usbntfs_mount_part(fsa_client, i, k, parts[p].start, name) == USBNTFS_MOUNTED;
+                usbntfs_on[k] = ok;
+            } else {
+                snprintf(name, sizeof(name), "usbfat%d", k + 1);
+                ok = usbfat_mount_part(fsa_client, i, parts[p].start, name);
+                usbfat_on[k] = ok;
+            }
+            if (!ok)
+                continue;
+            d->mounted = true;
+            d->fat = parts[p].kind == PART_FAT;
+            d->readonly = false;
+            snprintf(d->real, sizeof(d->real), "%s:", name);
+            snprintf(usb_dev_name[k], sizeof(usb_dev_name[k]), "USB Drive %d, part. %d", i + 1, p + 1);
+            d->name = usb_dev_name[k];
+            snprintf(d->note, sizeof(d->note), "%s",
+                     parts[p].kind == PART_NTFS ? "NTFS" : parts[p].kind == PART_EXFAT ? "exFAT" : "FAT32");
+        }
+    }
 }
 
 static void mount_internal(void)
 {
-    mount_one(DEV_MLC, "fs:/vol/storage_mlc01", "not accessible (needs Aroma / Mocha)");
-    mount_one(DEV_NAND, "fs:/vol/storage_slccmpt01", "needs system access (Aroma / Mocha)");
-    mount_one(DEV_SLC, "fs:/vol/system", "needs system access (Aroma / Mocha)");
-    g_devs[DEV_SLC].always_show = g_devs[DEV_SLC].mounted;
+    vfs_dev *mlc = &g_devs[DEV_MLC];
+    mlc->mounted = attach_vol(DEV_MLC, "storage_mlc01", NULL);
+    if (!mlc->mounted)
+        snprintf(mlc->note, sizeof(mlc->note), "not accessible");
+
+    vfs_dev *nand = &g_devs[DEV_NAND];
+    nand->mounted = attach_vol(DEV_NAND, "storage_slccmpt01", "/dev/slccmpt01");
+    if (!nand->mounted)
+        snprintf(nand->note, sizeof(nand->note), "needs system access (Aroma / Mocha)");
+
+    vfs_dev *slc = &g_devs[DEV_SLC];
+    slc->mounted = attach_vol(DEV_SLC, "storage_slc01", "/dev/slc01");
+    if (!slc->mounted)
+        snprintf(slc->note, sizeof(slc->note), "needs system access (Aroma / Mocha)");
 }
 
 static void fsa_start(void)
@@ -260,15 +407,31 @@ static void fsa_start(void)
     FSAInit();
     fsa_client = FSAAddClient(NULL);
     fsa_ready = fsa_client != 0;
+    if (fsa_ready && mocha_ready)
+        Mocha_UnlockFSClientEx(fsa_client);
 }
 
 void vfs_update_space(int dev)
 {
     vfs_dev *d = &g_devs[dev];
     d->space_known = false;
-    if (!d->mounted || !fsa_ready)
+    if (!d->mounted)
         return;
-    const char *fp = fsa_path(d->real);
+    if (dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS && (usbfat_on[dev - DEV_USB0] || usbntfs_on[dev - DEV_USB0])) {
+        char root[24];
+        struct statvfs sv;
+        snprintf(root, sizeof(root), "%s/", d->real);
+        if (statvfs(root, &sv) != 0)
+            return;
+        d->total = (u64)sv.f_blocks * sv.f_frsize;
+        d->free = (u64)sv.f_bfree * sv.f_frsize;
+        d->space_known = d->total > 0;
+        return;
+    }
+    if (!fsa_ready)
+        return;
+    char buf[VFS_PATH_MAX];
+    const char *fp = fsa_path(d->real, buf, sizeof(buf));
     u64 freeb = 0;
     FSADeviceInfo info;
     if (FSAGetFreeSpaceSize(fsa_client, fp, &freeb) != (FSError)FS_STATUS_OK)
@@ -282,8 +445,10 @@ void vfs_update_space(int dev)
 
 static void mount_all(void)
 {
+    detach_all();
     mount_sd();
     mount_usb();
+    mount_usb_extras();
     mount_internal();
     for (int i = 0; i < DEV_COUNT; i++)
         vfs_update_space(i);
@@ -291,6 +456,7 @@ static void mount_all(void)
 
 void vfs_init(void)
 {
+    mocha_ready = Mocha_InitLibrary() == MOCHA_RESULT_SUCCESS;
     fsa_start();
     mount_all();
 }
@@ -306,11 +472,16 @@ void vfs_shutdown(void)
 {
     arcfs_flush();
     WHBUnmountSdCard();
+    detach_all();
     for (int i = 0; i < DEV_COUNT; i++)
         g_devs[i].mounted = false;
     if (fsa_ready) {
         FSADelClient(fsa_client);
         fsa_ready = false;
+    }
+    if (mocha_ready) {
+        Mocha_DeInitLibrary();
+        mocha_ready = false;
     }
 }
 
@@ -443,11 +614,26 @@ bool vfs_exists(const char *path)
 
 /* ---------------------------------------------------------------- modify */
 
-bool vfs_mkdir(const char *path)
+/* Callers ask for the Konami code first; this keeps a locked drive unwritable even if one forgets. */
+static bool unlocked_for_write(const char *path)
 {
     int dev = vfs_dev_of(path);
+    if (dev >= 0 && g_devs[dev].readonly) {
+        g_write_err = "Read-only drive (ext)";
+        return false;
+    }
+    if (risk_dev_writable(dev))
+        return true;
+    g_write_err = "Protected drive is locked (Konami code not entered)";
+    return false;
+}
+
+bool vfs_mkdir(const char *path)
+{
+    g_write_err = NULL;
+    int dev = vfs_dev_of(path);
     char real[VFS_PATH_MAX];
-    if (dev < 0 || arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
+    if (dev < 0 || arcfs_is_path(path) || !unlocked_for_write(path) || !to_real(path, real, sizeof(real)))
         return false;
     arcfs_flush();
     return mkdir(real, 0777) == 0;
@@ -455,22 +641,25 @@ bool vfs_mkdir(const char *path)
 
 bool vfs_remove(const char *path, bool is_dir)
 {
+    g_write_err = NULL;
     char real[VFS_PATH_MAX];
-    if (arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
+    if (arcfs_is_path(path) || !unlocked_for_write(path) || !to_real(path, real, sizeof(real)))
         return false;
     arcfs_flush();
     if (is_dir ? rmdir(real) == 0 : unlink(real) == 0)
         return true;
     /* FAT refuses to delete a read-only entry: make it writable and try again */
-    if (!fsa_ready || FSAChangeMode(fsa_client, fsa_path(real), 0x666) != (FSError)FS_STATUS_OK)
+    char buf[VFS_PATH_MAX];
+    if (!fsa_ready || FSAChangeMode(fsa_client, fsa_path(real, buf, sizeof(buf)), 0x666) != (FSError)FS_STATUS_OK)
         return false;
     return is_dir ? rmdir(real) == 0 : unlink(real) == 0;
 }
 
 bool vfs_rename(const char *from, const char *to)
 {
+    g_write_err = NULL;
     int a = vfs_dev_of(from), b = vfs_dev_of(to);
-    if (a < 0 || a != b || arcfs_is_path(from) || arcfs_is_path(to))
+    if (a < 0 || a != b || arcfs_is_path(from) || arcfs_is_path(to) || !unlocked_for_write(from))
         return false;
     char rf[VFS_PATH_MAX], rt[VFS_PATH_MAX];
     if (!to_real(from, rf, sizeof(rf)) || !to_real(to, rt, sizeof(rt)))
@@ -507,7 +696,7 @@ bool vfs_open_write(vfs_file *f, const char *path)
     memset(f, 0, sizeof(*f));
     f->dev = vfs_dev_of(path);
     g_write_err = NULL;
-    if (arcfs_is_path(path) || f->dev < 0)
+    if (arcfs_is_path(path) || f->dev < 0 || !unlocked_for_write(path))
         return false;
     char real[VFS_PATH_MAX];
     if (!to_real(path, real, sizeof(real)))
@@ -517,6 +706,7 @@ bool vfs_open_write(vfs_file *f, const char *path)
     return f->fp != NULL;
 }
 
+/* wut reports 512-byte blocks, so stdio would split every copy chunk into 512-byte requests. */
 void vfs_unbuffered(vfs_file *f)
 {
     if (f->fp)

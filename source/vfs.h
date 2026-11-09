@@ -8,12 +8,13 @@
 /* One flat namespace for every storage device the Wii U can mount (GodModeWii's interface, so the
  * code shared with it works unchanged):
  *   sd:/path          SD card                         (read / write)
- *   usb1:/, usb2:/    USB drives the Wii U formatted  (read / write, as Cafe OS mounts them)
+ *   usb1:/..usb8:/    USB drives: Wii U formatted (WFS), or FAT32 / exFAT / NTFS (read / write) and
+ *                     ext2/3/4 (read-only) through Mocha's raw sector access, one entry per partition
  *   mlc:/path         Wii U internal storage (MLC)    (protected: Konami code to change anything)
  *   nand:/path        vWii NAND (SLCCMPT)             (protected, 12 character names)
- *   slc:/path         Wii U system NAND (SLC)         (protected)
- * Each drive is reached through its Cafe OS mount point ("fs:/vol/...") via wut's FSA devoptab, so the
- * normal stdio calls work on it. GodModeWii's Wii-only drives (Gecko, memory cards, SEEPROM, disc,
+ *   slc:/path         Wii U system NAND (SLC)         (protected, with an extra warning)
+ * Each drive is reached through its Cafe OS mount point ("fs:/vol/...") via wut's FSA devoptab, or
+ * through a Mocha devoptab when the app lacks permission, so the normal stdio calls work on it. GodModeWii's Wii-only drives (Gecko, memory cards, SEEPROM, disc,
  * keys) keep their names below so the shared code compiles, but are never mounted here. */
 
 #define USB_SLOTS 8
@@ -79,7 +80,9 @@ typedef struct {
     bool maybe_wiiu;
     bool ntfs;
     u8 ext;
-    char real[VFS_PATH_MAX];  /* Cafe OS mount point, "fs:/vol/..." (no trailing slash) */
+    char real[VFS_PATH_MAX];  /* "fs:/vol/..." or a Mocha / USB devoptab, "storage_usb01:" (no trailing slash) */
+    bool fat;                 /* FAT32, with its 4 GiB file size limit */
+    bool readonly;            /* ext2/3/4: mounted read-only */
 } vfs_dev;
 
 extern vfs_dev g_devs[DEV_COUNT];
@@ -97,7 +100,7 @@ int  vfs_dev_of(const char *path);      /* -1 if unknown */
 bool vfs_is_protected(int dev);         /* MLC / NAND / SLC: changing anything asks for the Konami code */
 bool vfs_is_virtual(int dev);           /* GodModeWii's virtual drives: none here */
 bool vfs_is_card(int dev);
-bool vfs_is_readonly(const char *path); /* archives are read-only */
+bool vfs_is_readonly(const char *path); /* archives and ext drives are read-only */
 bool vfs_is_archive(const char *path);  /* inside an archive: "sd:/a.wad|/x" */
 /* The path as the user sees it: "sd:/a.wad|/x" -> "sd:/a.wad/x" (the '|' only marks an archive). */
 void vfs_shown_path(const char *path, char *out, size_t n);

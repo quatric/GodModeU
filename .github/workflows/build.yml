@@ -41,6 +41,20 @@ jobs:
           make install
           ls "$DEVKITPRO/tools/bin" || true
 
+      - name: Build libmocha
+        run: |
+          apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null
+          ./scripts/build_libmocha.sh
+
+      - name: Build libdvm
+        run: ./scripts/build_libdvm.sh
+
+      - name: Build libntfs
+        run: ./scripts/build_libntfs.sh
+
+      - name: Build libext4
+        run: ./scripts/build_libext4.sh
+
       - name: Build
         run: make
 

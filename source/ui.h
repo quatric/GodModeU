@@ -11,6 +11,8 @@ void ui_init(void);
 void ui_shutdown(void);
 /* Shows the framebuffer now instead of on the next frame. */
 void ui_present(void);
+/* Lets Aroma's plugin menu (L + Down + Minus) open over the app, then redraws. */
+void ui_plugin_menu(void);
 int  ui_cols(void);
 int  ui_rows(void);
 

@@ -4,8 +4,9 @@
  * Inspired by ftpii (Joseph Jordan and contributors), rewritten around a
  * single-threaded, non-blocking state machine with a lot of guard rails:
  *
- *  - login is always required; the password is random per run and shown on
- *    the console screen, failed logins are throttled and lock the door
+ *  - login is required by default; the password is random per run and shown on
+ *    the console screen, failed logins are throttled and lock the door. It can
+ *    be switched off on the server screen, for that run only
  *  - only private-network / link-local peers are accepted
  *  - PORT / PASV data connections must come from / go to the control peer
  *    (no FTP bounce, no data-connection hijacking)
@@ -153,9 +154,10 @@ static void set_nonblock(s32 s)
     fcntl(s, F_SETFL, O_NONBLOCK);
 }
 
+/* wut's sockets return -1 and set errno; libogc's, which this server started on, return -errno. */
 static bool would_block(s32 r)
 {
-    return r == -EAGAIN || r == -EINPROGRESS || r == -EALREADY;
+    return r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS || errno == EALREADY);
 }
 
 static s32 make_listener(int port)
@@ -176,6 +178,23 @@ static s32 make_listener(int port)
     }
     set_nonblock(s);
     return s;
+}
+
+/* Aroma's ftpiiu runs inside this same process, so binding its port 21 again succeeds while
+ * clients still reach ftpiiu. Knocking first shows whether something already answers. */
+static bool port_taken(u32 ip, int port)
+{
+    s32 s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0)
+        return false;
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof(a));
+    a.sin_family = AF_INET;
+    a.sin_port = htons(port);
+    a.sin_addr.s_addr = ip;
+    bool taken = connect(s, (struct sockaddr *)&a, sizeof(a)) == 0;
+    close(s);
+    return taken;
 }
 
 /* Only RFC1918 / link-local peers may talk to the server. */
@@ -296,7 +315,7 @@ static bool to_real(const char *v, char *real, size_t sz, int *dev)
 /* Write permission with the same rules as the file browser. */
 static bool can_write(const char *real, int dev, const char **why)
 {
-    if (dev < 0)                        { *why = "Read-only location"; return false; }
+    if (dev < 0 || g_devs[dev].readonly) { *why = "Read-only location"; return false; }
     if (!g_rw)                          { *why = "Server is read-only"; return false; }
     if (vfs_is_protected(dev)) {
         /* The code is typed on the console itself; the FTP command waits. */
@@ -415,7 +434,7 @@ static void begin_data(sess_t *s, int op, const char *real)
         }
         set_nonblock(s->ds);
         s32 r = connect(s->ds, (struct sockaddr *)&s->port_addr, sizeof(s->port_addr));
-        if (r < 0 && !would_block(r) && r != -EISCONN) {
+        if (r < 0 && !would_block(r) && errno != EISCONN) {
             reply(s, "425 Can't open data connection");
             transfer_cleanup(s, true);
             return;
@@ -620,7 +639,7 @@ static void do_list(sess_t *s, int op, const char *arg)
             ents[0].size = size;
             n = 1;
         }
-        s->ro_list = !g_rw || (vfs_is_protected(dev) && !risk_unlocked());
+        s->ro_list = !g_rw || g_devs[dev].readonly || !risk_dev_writable(dev);
     }
     s->buf = malloc(IO_CHUNK);
     if (!s->buf) { free(ents); reply(s, "451 Out of memory"); return; }
@@ -1186,7 +1205,8 @@ static void draw(u32 ip)
         }
         bool in = s->authed || g_open_login;
         ui_color(in ? C_WHITE : C_YELLOW, in);
-        ui_field(row++, 2, cols - 3, "%-15s %-9s %-14s %s", ip_s, s->authed ? "logged in" : in ? "open" : "login...", tr,
+        ui_field(row++, 2, cols - 3, "%-15s %-9s %-14s %s", ip_s,
+                 s->authed ? "logged in" : in ? "open" : "login...", tr,
                  s->ts >= T_SEND_FILE ? s->t_name : "");
         ui_reset();
     }
@@ -1200,7 +1220,7 @@ static void draw(u32 ip)
             ui_field(logrow + i, 2, cols - 3, "%s", logbuf[idx % LOG_LINES]);
     }
     ui_color(C_CYAN, true);
-    ui_field(rows - 2, 1, cols - 2, "1: login on/off    B / HOME: stop the server");
+    ui_field(rows - 2, 1, cols - 2, "Y / 1: login on/off    B / HOME: stop the server");
     ui_reset();
 }
 
@@ -1222,9 +1242,9 @@ bool ftp_run(bool read_write, int install_mode)
         return false;
     u32 ip = host_ip();
 
-    g_port = FTP_PORT;
+    g_port = port_taken(ip, FTP_PORT) ? FTP_PORT_ALT : FTP_PORT;
     listener = make_listener(g_port);
-    if (listener < 0) {
+    if (listener < 0 && g_port == FTP_PORT) {
         g_port = FTP_PORT_ALT;
         listener = make_listener(g_port);
     }
@@ -1234,6 +1254,7 @@ bool ftp_run(bool read_write, int install_mode)
     }
 
     g_rw = read_write || install_mode;
+    g_open_login = false;
     g_install = install_mode;
     g_pend[0] = '\0';
     gen_password();
@@ -1268,7 +1289,8 @@ bool ftp_run(bool read_write, int install_mode)
         u32 btn = progress ? input_poll_nowait() : DetectInput(IN_DOWN);
         if (btn & WPAD_BUTTON_1) {
             g_open_login = !g_open_login;
-            ftp_log(g_open_login ? "Login switched off" : "Login switched on");
+            ftp_log(g_open_login ? "Login off: anyone on the network can connect" : "Login required again");
+            last_draw = 0;
         }
         if (btn & (WPAD_BUTTON_B | WPAD_BUTTON_HOME)) {
             bool busy = false;

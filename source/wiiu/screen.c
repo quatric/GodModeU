@@ -19,6 +19,9 @@
 #include <coreinit/thread.h>
 #include <coreinit/time.h>
 #include <proc_ui/procui.h>
+#include <gx2/display.h>
+#include <gx2/state.h>
+#include <gx2/swap.h>
 
 #include "screen.h"
 
@@ -304,6 +307,8 @@ bool screen_init(void)
     if (!xfb)
         return false;
     screen_clear(0x00800080);
+    /* GX2 is only here so screen_plugin_menu() can swap; it comes first, then OSScreen. */
+    GX2Init(NULL);
     OSScreenInit();
     acquired(NULL);
     ProcUIRegisterCallback(PROCUI_CALLBACK_ACQUIRE, acquired, NULL, 100);
@@ -332,6 +337,27 @@ void screen_shutdown(void)
         OSScreenShutdown();
         released(NULL);
     }
+    GX2Shutdown();
+}
+
+/* Aroma opens its plugin menu inside GX2SwapScanBuffers and draws it with OSScreen into its own
+ * buffers, so the app offers it a swap, then points the screens back at ours and redraws them. */
+void screen_plugin_menu(void)
+{
+    OSLockMutex(&lock);
+    if (ready) {
+        GX2SwapScanBuffers();
+        OSScreenSetBufferEx(SCREEN_TV, mem);
+        OSScreenSetBufferEx(SCREEN_DRC, (uint8_t *)mem + tv_size);
+        OSScreenEnableEx(SCREEN_TV, TRUE);
+        OSScreenEnableEx(SCREEN_DRC, TRUE);
+        for (int i = 0; i < 2; i++) {
+            scr[i].pitch = 0;
+            scr[i].valid[0] = scr[i].valid[1] = false;
+            border_dirty[i] = 3;
+        }
+    }
+    OSUnlockMutex(&lock);
 }
 
 uint8_t *screen_xfb(void) { return xfb; }
