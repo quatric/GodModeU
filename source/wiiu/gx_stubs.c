@@ -1,11 +1,11 @@
 /*
  * GodModeWii draws 3D models, NW4R layouts and Mii faces with the Wii's GX. Those viewers aren't part
- * of the Wii U port (yet): the file falls back to its text / archive view.
+ * of the Wii U port: the file falls back to its text / archive view. (BFRES models have a software
+ * viewer of their own: model_view.c.)
  */
 #include <stdbool.h>
 #include "media.h"
 
-bool model_view(const char *path) { (void)path; return false; }
 bool lyt_view(const char *path) { (void)path; return false; }
 void model_gx_setup(void) {}
 void model_gx_init(void) {}

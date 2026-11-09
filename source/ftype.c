@@ -109,6 +109,8 @@ ftype_t ftype_sniff(const u8 *h, u32 n, u64 size, const char *name)
         /* AST: PCM16 / ADPCM */
         if (M("STRM") && n >= 0x40 && be16(h + 8) <= 1) return FT_STREAM;
         if (M("RSEQ")) return FT_SEQ;
+        /* Wii U BFRES: the model viewer (it hands one with only textures to the image viewer) */
+        if (M("FRES") && n >= 10 && h[8] == 0xFE && h[9] == 0xFF) return FT_MODEL;
         /* a BFSAR's Sequences folder: played with its bank (a lone .bfseq shows as text) */
         if (M("FSEQ") && name && arc_name_has_ext(name, ".seq")) return FT_SEQ;
         if (M("MThd")) return FT_MIDI;
