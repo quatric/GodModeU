@@ -45,6 +45,7 @@
 #include "arcfs.h"
 #include "risk.h"
 #include "install.h"
+#include "sfx.h"
 
 #define FTP_PORT        21
 #define FTP_PORT_ALT    2121
@@ -109,6 +110,7 @@ static bool g_rw;
 static int g_install;                 /* FTP_INSTALL_*: unpack uploaded archives */
 static char g_pend[VFS_PATH_MAX];     /* archive waiting to be installed */
 static char g_pass[10];
+static bool g_open_login;             /* no user name or password needed (switched on the screen) */
 static bool net_ready;
 
 static int g_fail_count;
@@ -339,7 +341,14 @@ static void transfer_end(sess_t *s, bool ok, const char *err)
     char real[VFS_PATH_MAX];
     snprintf(real, sizeof(real), "%s", s->t_real);
 
-    if (s->f_open) { vfs_close(&s->f); s->f_open = false; }
+    if (s->f_open) {
+        /* an upload isn't on the drive until the close went through */
+        if (!vfs_close_checked(&s->f) && ok && stor) {
+            ok = false;
+            err = "452 Could not finish writing the file (drive full?)";
+        }
+        s->f_open = false;
+    }
     data_close(s);
 
     if (ok && stor) {
@@ -759,8 +768,8 @@ static void note_login_failure(sess_t *s)
         g_block_until = t + GLOBAL_LOCK;
         ftp_log("Too many bad logins - refusing clients for 60s");
     }
-    ftp_log("Bad login from %u.%u.%u.%u", s->peer_ip & 255, (s->peer_ip >> 8) & 255,
-            (s->peer_ip >> 16) & 255, s->peer_ip >> 24);
+    ftp_log("Bad login from %u.%u.%u.%u", s->peer_ip >> 24, (s->peer_ip >> 16) & 255,
+            (s->peer_ip >> 8) & 255, s->peer_ip & 255);
 }
 
 static void run_command(sess_t *s, char *line)
@@ -798,6 +807,10 @@ static void run_command(sess_t *s, char *line)
         return;
     }
 
+    if (g_open_login && (!strcmp(cmd, "USER") || !strcmp(cmd, "PASS"))) {
+        reply(s, "230 Logged in, no login needed. %s", g_rw ? "Read/write." : "Read-only.");
+        return;
+    }
     if (!strcmp(cmd, "USER")) {
         s->authed = false;
         s->user_ok = !strcmp(arg, FTP_USER);
@@ -821,7 +834,7 @@ static void run_command(sess_t *s, char *line)
         }
         return;
     }
-    if (!s->authed) { reply(s, "530 Please log in with USER and PASS"); return; }
+    if (!s->authed && !g_open_login) { reply(s, "530 Please log in with USER and PASS"); return; }
 
     char v[VFS_PATH_MAX], real[VFS_PATH_MAX];
     int dev;
@@ -972,7 +985,10 @@ static void sess_open(sess_t *s, s32 c, u32 ip)
     s->peer_ip = ip;
     s->last = now_ms();
     snprintf(s->cwd, sizeof(s->cwd), "/");
-    reply(s, "220 GodModeU FTP ready. Log in with USER %s and the password shown on the Wii U.", FTP_USER);
+    if (g_open_login)
+        reply(s, "220 GodModeU FTP ready. No user name or password needed.");
+    else
+        reply(s, "220 GodModeU FTP ready. Log in with USER %s and the password shown on the Wii U.", FTP_USER);
 }
 
 static void accept_new(void)
@@ -1000,8 +1016,9 @@ static void accept_new(void)
             continue;
         }
         sess_open(slot, c, a.sin_addr.s_addr);
-        ftp_log("Client connected: %u.%u.%u.%u", a.sin_addr.s_addr & 255, (a.sin_addr.s_addr >> 8) & 255,
-                (a.sin_addr.s_addr >> 16) & 255, a.sin_addr.s_addr >> 24);
+        ftp_log("Client connected: %u.%u.%u.%u", (unsigned)(a.sin_addr.s_addr >> 24),
+                (unsigned)((a.sin_addr.s_addr >> 16) & 255), (unsigned)((a.sin_addr.s_addr >> 8) & 255),
+                (unsigned)(a.sin_addr.s_addr & 255));
     }
 }
 
@@ -1123,8 +1140,8 @@ static void draw(u32 ip)
 {
     int cols = ui_cols(), rows = ui_rows();
     ui_clear();
-    ui_bg(risk_unlocked() ? C_RED : C_BLUE);
-    ui_color(C_WHITE, true);
+    ui_bg(C_GREEN);
+    ui_color(C_BLACK, false);                 /* as on the green dialog title bars */
     ui_field(0, 0, cols - 1, " GodModeU v%s  -  FTP SERVER", GMW_VERSION);
     ui_reset();
 
@@ -1133,8 +1150,14 @@ static void draw(u32 ip)
     ui_color(C_WHITE, true);
     ui_field(4, 1, cols - 2, "Address :  ftp://%u.%u.%u.%u%s", (ip >> 24) & 255, (ip >> 16) & 255, (ip >> 8) & 255, ip & 255,
              g_port == 21 ? "" : ":2121");
-    ui_field(5, 1, cols - 2, "User    :  %s", FTP_USER);
-    ui_field(6, 1, cols - 2, "Password:  %s", g_pass);
+    if (g_open_login) {
+        ui_color(C_YELLOW, true);
+        ui_field(5, 1, cols - 2, "Login   :  OFF - no user name or password needed");
+        ui_field(6, 1, cols - 2, "           anyone on your network can connect");
+    } else {
+        ui_field(5, 1, cols - 2, "User    :  %s", FTP_USER);
+        ui_field(6, 1, cols - 2, "Password:  %s", g_pass);
+    }
     ui_color(g_rw ? C_YELLOW : C_CYAN, true);
     ui_field(7, 1, cols - 2, "Mode    :  %s", g_rw ? "READ / WRITE (MLC / NAND still need the Konami unlock)" : "READ-ONLY");
     ui_color(C_WHITE, false);
@@ -1152,8 +1175,8 @@ static void draw(u32 ip)
         sess_t *s = &S[i];
         if (!s->used) continue;
         char ip_s[24];
-        snprintf(ip_s, sizeof(ip_s), "%u.%u.%u.%u", s->peer_ip & 255, (s->peer_ip >> 8) & 255,
-                 (s->peer_ip >> 16) & 255, s->peer_ip >> 24);
+        snprintf(ip_s, sizeof(ip_s), "%u.%u.%u.%u", s->peer_ip >> 24, (s->peer_ip >> 16) & 255,
+                 (s->peer_ip >> 8) & 255, s->peer_ip & 255);
         char tr[48] = "";
         if (s->ts >= T_SEND_FILE) {
             char sz[24];
@@ -1161,8 +1184,10 @@ static void draw(u32 ip)
             ui_fmt_size(sz, sizeof(sz), s->t_bytes * 1000 / el);
             snprintf(tr, sizeof(tr), "%s %s/s", s->op == OP_STOR ? "up" : "down", sz);
         }
-        ui_color(s->authed ? C_WHITE : C_YELLOW, s->authed);
-        ui_field(row++, 2, cols - 3, "%-15s %-9s %-14s %s", ip_s, s->authed ? "logged in" : "login...", tr, s->ts >= T_SEND_FILE ? s->t_name : "");
+        bool in = s->authed || g_open_login;
+        ui_color(in ? C_WHITE : C_YELLOW, in);
+        ui_field(row++, 2, cols - 3, "%-15s %-9s %-14s %s", ip_s, s->authed ? "logged in" : in ? "open" : "login...", tr,
+                 s->ts >= T_SEND_FILE ? s->t_name : "");
         ui_reset();
     }
     int logrow = rows - 3 - LOG_LINES;
@@ -1175,7 +1200,7 @@ static void draw(u32 ip)
             ui_field(logrow + i, 2, cols - 3, "%s", logbuf[idx % LOG_LINES]);
     }
     ui_color(C_CYAN, true);
-    ui_field(rows - 2, 1, cols - 2, "B / HOME: stop the server");
+    ui_field(rows - 2, 1, cols - 2, "1: login on/off    B / HOME: stop the server");
     ui_reset();
 }
 
@@ -1193,20 +1218,9 @@ static void gen_password(void)
 
 bool ftp_run(bool read_write, int install_mode)
 {
-    ui_splash("Connecting to the network...");
-    if (!net_ready) {
-        if (NNResult_IsFailure(ACInitialize())) {
-            ui_message("NETWORK", C_RED, "Couldn't connect to the network.\n\nCheck the connection in System Settings > Internet and try again.");
-            return false;
-        }
-        socket_lib_init();
-        net_ready = true;
-    }
-    u32 ip = host_ip();
-    if (!ip) {
-        ui_message("NETWORK", C_RED, "The console has no IP address.");
+    if (!ftp_net_start())
         return false;
-    }
+    u32 ip = host_ip();
 
     g_port = FTP_PORT;
     listener = make_listener(g_port);
@@ -1252,7 +1266,11 @@ bool ftp_run(bool read_write, int install_mode)
         }
 
         u32 btn = progress ? input_poll_nowait() : DetectInput(IN_DOWN);
-        if (btn & (BTN_B | BTN_HOME)) {
+        if (btn & WPAD_BUTTON_1) {
+            g_open_login = !g_open_login;
+            ftp_log(g_open_login ? "Login switched off" : "Login switched on");
+        }
+        if (btn & (WPAD_BUTTON_B | WPAD_BUTTON_HOME)) {
             bool busy = false;
             for (int i = 0; i < MAX_SESS; i++)
                 if (S[i].used && S[i].ts != T_NONE) busy = true;
@@ -1275,6 +1293,33 @@ bool ftp_run(bool read_write, int install_mode)
     close(listener);
     listener = -1;
     return true;
+}
+
+/* Brings the network up for the FTP server and the wiiload receiver; ftp_net_shutdown() takes it
+ * down on exit. */
+bool ftp_net_start(void)
+{
+    ui_splash("Connecting to the network...");
+    if (!net_ready) {
+        if (NNResult_IsFailure(ACInitialize())) {
+            ui_message("NETWORK", C_RED, "Couldn't connect to the network.\n\nCheck the connection in System Settings > Internet and try again.");
+            return false;
+        }
+        ACConnect();
+        socket_lib_init();
+        net_ready = true;
+    }
+    if (!host_ip()) {
+        ui_message("NETWORK", C_RED, "The console has no IP address.\n\nCheck the connection in System Settings > Internet and try again.");
+        return false;
+    }
+    sfx_play(SFX_CLICK);
+    return true;
+}
+
+unsigned ftp_host_ip(void)
+{
+    return net_ready ? host_ip() : 0;
 }
 
 void ftp_net_shutdown(void)

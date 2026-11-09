@@ -1,6 +1,6 @@
 /*
  * WAD packages, content.bin and data.bin, read-only.
- * Layouts follow Sharpii / libWiiSharp (WAD), DarkMatterCore's wad2bin (content.bin,
+ * Layouts match Sharpii / libWiiSharp (WAD), DarkMatterCore's wad2bin (content.bin,
  * "Bk" header) and Dolphin's WiiSave (data.bin). Everything that is encrypted is
  * decrypted on the fly while reading, so nothing is ever unpacked to disk first.
  */
@@ -51,7 +51,11 @@ static archive_t *enc_new(const char *kind, const src_t *file)
 {
     archive_t *a = archive_alloc(kind);
     encpriv *p = calloc(1, sizeof(*p));
-    if (!a || !p) { free(p); archive_close(a); return NULL; }
+    if (!a || !p) {
+        free(p);
+        archive_close(a);
+        return NULL;
+    }
     a->priv = p;
     a->read = enc_read;
     a->destroy = enc_destroy;
@@ -113,7 +117,9 @@ static bool parse_tmd(const uint8_t *t, uint32_t len, tmd_t *out)
     out->title_id = be64(t + b + 0x4C);
     out->count = be16(t + b + 0x9E);
     out->records = t + b + 0xA4;
-    if (out->count < 0 || out->count > 512 || (uint64_t)b + 0xA4 + (uint64_t)out->count * 0x24 > len) return false;
+    if (out->count < 0 || out->count > 512 ||
+        (uint64_t)b + 0xA4 + (uint64_t)out->count * 0x24 > len)
+        return false;
     return true;
 }
 
@@ -141,12 +147,16 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
     (void)name;
     uint8_t h[0x20];
     if (!src_read_full(file, 0, h, sizeof(h))) return NULL;
-    uint32_t cert_sz = be32(h + 8), tik_sz = be32(h + 0x10), tmd_sz = be32(h + 0x14);
+    uint32_t cert_sz = be32(h + 8), crl_sz = be32(h + 0xC), tik_sz = be32(h + 0x10),
+             tmd_sz = be32(h + 0x14);
     uint32_t data_sz = be32(h + 0x18), footer_sz = be32(h + 0x1C);
-    if (tik_sz < 0x2A4 || tmd_sz < 0x1E4 || tmd_sz > 1024 * 1024 || cert_sz > 1024 * 1024) return NULL;
+    if (tik_sz < 0x2A4 || tmd_sz < 0x1E4 || tmd_sz > 1024 * 1024 || cert_sz > 1024 * 1024 ||
+        crl_sz > 1024 * 1024)
+        return NULL;
 
     uint64_t cert_off = 0x40;
-    uint64_t tik_off = cert_off + align64(cert_sz);
+    uint64_t crl_off = cert_off + align64(cert_sz);
+    uint64_t tik_off = crl_off + align64(crl_sz);
     uint64_t tmd_off = tik_off + align64(tik_sz);
     uint64_t data_off = tmd_off + align64(tmd_sz);
     uint64_t foot_off = data_off + align64(data_sz);
@@ -154,7 +164,8 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
 
     uint8_t *tik = malloc(tik_sz), *tmd = malloc(tmd_sz);
     archive_t *a = NULL;
-    if (!tik || !tmd || !src_read_full(file, tik_off, tik, tik_sz) || !src_read_full(file, tmd_off, tmd, tmd_sz))
+    if (!tik || !tmd || !src_read_full(file, tik_off, tik, tik_sz) ||
+        !src_read_full(file, tmd_off, tmd, tmd_sz))
         goto out;
     tmd_t t;
     if (!parse_tmd(tmd, tmd_sz, &t)) goto out;
@@ -169,6 +180,7 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
     if (tb && tik_sz >= tb + 0xB2) {
         uint8_t ck[16], tk[16], iv[16];
         int idx = tik[tb + 0xB1];
+        if (idx > 2) idx = 0;           /* bogus index: the regular common key */
         if (arc_common_key(idx, ck)) {
             aes128_t c;
             aes128_init_dec(&c, ck);
@@ -177,7 +189,9 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
             aes128_cbc_decrypt(&c, iv, tik + tb + 0x7F, tk, 16);
             aes128_init_dec(&p->ctx, tk);
             have_key = true;
-            memset(ck, 0, 16); memset(tk, 0, 16); memset(&c, 0, sizeof(c));
+            memset(ck, 0, 16);
+            memset(tk, 0, 16);
+            memset(&c, 0, sizeof(c));
         }
     }
 
@@ -188,9 +202,53 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
     if (tree_add(&a->tree, 0, nm, false, tik_sz, tik_off, 0, K_RAW) < 0) goto bad;
     snprintf(nm, sizeof(nm), "%016llx.tmd", (unsigned long long)t.title_id);
     if (tree_add(&a->tree, 0, nm, false, tmd_sz, tmd_off, 0, K_RAW) < 0) goto bad;
+    if (crl_sz) {
+        snprintf(nm, sizeof(nm), "%016llx.crl", (unsigned long long)t.title_id);
+        if (tree_add(&a->tree, 0, nm, false, crl_sz, crl_off, 0, K_RAW) < 0) goto bad;
+    }
     if (footer_sz) {
         snprintf(nm, sizeof(nm), "%016llx.footer", (unsigned long long)t.title_id);
         if (tree_add(&a->tree, 0, nm, false, footer_sz, foot_off, 0, K_RAW) < 0) goto bad;
+    }
+
+    /* wad_info.txt: what the package holds, readable in the text viewer. */
+    {
+        uint32_t tb2 = sig_body(be32(tmd));
+        const uint8_t *tm = tmd + tb2;
+        uint64_t sysv = be64(tm + 0x04);
+        int ck = (tb && tik_sz >= tb + 0xB2) ? tik[tb + 0xB1] : -1;
+
+        size_t cap = 1024 + (size_t)t.count * 80;
+        char *txt = malloc(cap);
+        if (!txt) goto bad;
+
+        int l = snprintf(txt, cap,
+            "Title ID:      %016llX (%08X-%08X)\n"
+            "Version:       %u\n"
+            "Runs on:       %s%u\n"
+            "Common key:    %d (%s)%s\n"
+            "Region:        %u\n"
+            "Contents:      %d\n\n"
+            "  #  Content   Index  Type    Size\n",
+            (unsigned long long)t.title_id, (unsigned)(t.title_id >> 32), (unsigned)t.title_id,
+            (unsigned)be16(tm + 0x9C),
+            (sysv >> 32) ? "IOS" : "- (this is an IOS) ",
+            (sysv >> 32) ? (unsigned)(uint32_t)sysv : 0u,
+            ck, ck == 0 ? "Wii" : ck == 1 ? "Korean" : ck == 2 ? "vWii" : "unknown",
+            have_key ? "" : " - contents can't be decrypted",
+            (unsigned)be16(tm + 0x5C), t.count);
+        for (int i = 0; i < t.count && l > 0 && (size_t)l < cap; i++) {
+            const uint8_t *r = t.records + (size_t)i * 0x24;
+            l += snprintf(txt + l, cap - l, "%3d  %08x  %5u  %04x  %llu%s\n", i,
+                          (unsigned)be32(r), (unsigned)be16(r + 4), (unsigned)be16(r + 6),
+                          (unsigned long long)be64(r + 8),
+                          (be16(r + 6) & 0x8000) ? "  shared" : "");
+        }
+
+        if (l < 0 || (size_t)l >= cap) l = (int)strlen(txt);
+        p->blob = (uint8_t *)txt;
+        p->blob_len = (uint32_t)l;
+        if (tree_add(&a->tree, 0, "wad_info.txt", false, (uint64_t)l, 0, 0, K_MEM) < 0) goto bad;
     }
 
     uint64_t pos = data_off;
@@ -200,6 +258,7 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
         uint16_t index = be16(r + 4);
         uint64_t size = be64(r + 8);
         uint64_t enc = align64(size);
+
         if (pos + enc > file->size + 63) break;             /* truncated package */
         if (have_key) {
             uint8_t iv[16];
@@ -207,13 +266,15 @@ archive_t *arc_wad_open(const src_t *file, const char *name)
             int ivi = add_iv(p, iv);
             if (ivi < 0) goto bad;
             snprintf(nm, sizeof(nm), "%08x.app", (unsigned)cid);
-            if (tree_add(&a->tree, 0, nm, false, size, pos, enc, K_CBC | ((uint32_t)ivi << 8)) < 0) goto bad;
+            if (tree_add(&a->tree, 0, nm, false, size, pos, enc, K_CBC | ((uint32_t)ivi << 8)) < 0)
+                goto bad;
         } else {
             snprintf(nm, sizeof(nm), "%08x.app.enc", (unsigned)cid);
             if (tree_add(&a->tree, 0, nm, false, enc, pos, enc, K_RAW) < 0) goto bad;
         }
         pos += enc;
     }
+
     free(tik);
     free(tmd);
     return a;
@@ -249,52 +310,86 @@ archive_t *arc_contentbin_open(const src_t *file, const char *name)
 {
     (void)name;
     uint8_t *hdr = malloc(CB_HEADER);
-    if (!hdr || !src_read_full(file, 0, hdr, CB_HEADER)) { free(hdr); return NULL; }
+    if (!hdr || !src_read_full(file, 0, hdr, CB_HEADER)) {
+        free(hdr);
+        return NULL;
+    }
     aes128_t sd;
     aes128_init_dec(&sd, ARC_SD_KEY);
     aes128_cbc_decrypt(&sd, ARC_SD_IV, hdr, hdr, CB_HEADER);
     uint64_t title_id = be64(hdr);
     uint32_t icon_size = be32(hdr + 8);
-    if (icon_size > 8 * 1024 * 1024) { free(hdr); return NULL; }
+    if (icon_size > 8 * 1024 * 1024) {
+        free(hdr);
+        return NULL;
+    }
     uint64_t icon_alloc = align64(icon_size);
 
     uint64_t c_off = CB_HEADER + icon_alloc;
     uint8_t bk[CB_BK_SIZE];
-    if (c_off + CB_BK_SIZE > file->size || !src_read_full(file, c_off, bk, sizeof(bk)) || be32(bk) != 0x70 || be32(bk + 4) != BK_MAGIC) {
+    if (c_off + CB_BK_SIZE > file->size || !src_read_full(file, c_off, bk, sizeof(bk)) ||
+        be32(bk) != 0x70 || be32(bk + 4) != BK_MAGIC) {
         free(hdr);
         return NULL;
     }
     uint32_t tmd_sz = be32(bk + 0x14);
     uint64_t d_off = c_off + CB_BK_SIZE;
     uint64_t e_off = d_off + align64(tmd_sz);
-    if (tmd_sz < 0x1E4 || tmd_sz > 1024 * 1024 || e_off > file->size) { free(hdr); return NULL; }
+    if (tmd_sz < 0x1E4 || tmd_sz > 1024 * 1024 || e_off > file->size) {
+        free(hdr);
+        return NULL;
+    }
     uint8_t *tmd = malloc(tmd_sz);
-    if (!tmd || !src_read_full(file, d_off, tmd, tmd_sz)) { free(hdr); free(tmd); return NULL; }
+    if (!tmd || !src_read_full(file, d_off, tmd, tmd_sz)) {
+        free(hdr);
+        free(tmd);
+        return NULL;
+    }
     tmd_t t;
-    if (!parse_tmd(tmd, tmd_sz, &t)) { free(hdr); free(tmd); return NULL; }
+    if (!parse_tmd(tmd, tmd_sz, &t)) {
+        free(hdr);
+        free(tmd);
+        return NULL;
+    }
 
     archive_t *a = enc_new("content.bin", file);
-    if (!a) { free(hdr); free(tmd); return NULL; }
+    if (!a) {
+        free(hdr);
+        free(tmd);
+        return NULL;
+    }
     encpriv *p = a->priv;
 
-    /* blob = decrypted header (part A) followed by decrypted icon.bin (part B) */
+    /* blob = decrypted header (part A), then decrypted icon.bin (part B) */
     p->blob = realloc(hdr, CB_HEADER + icon_alloc);
-    if (!p->blob) { free(hdr); free(tmd); return fail(a); }
+    if (!p->blob) {
+        free(hdr);
+        free(tmd);
+        return fail(a);
+    }
     hdr = NULL;
     p->blob_len = (uint32_t)(CB_HEADER + icon_alloc);
     if (icon_alloc) {
-        if (!src_read_full(file, CB_HEADER, p->blob + CB_HEADER, (uint32_t)icon_alloc)) { free(tmd); return fail(a); }
-        aes128_cbc_decrypt(&sd, ARC_SD_IV, p->blob + CB_HEADER, p->blob + CB_HEADER, (size_t)icon_alloc);
+        if (!src_read_full(file, CB_HEADER, p->blob + CB_HEADER, (uint32_t)icon_alloc)) {
+            free(tmd);
+            return fail(a);
+        }
+        aes128_cbc_decrypt(&sd, ARC_SD_IV, p->blob + CB_HEADER, p->blob + CB_HEADER,
+                           (size_t)icon_alloc);
     }
     memset(&sd, 0, sizeof(sd));
 
     uint8_t prng[16];
-    bool have_key = arc_prng_key(prng);
-    if (have_key) { aes128_init_dec(&p->ctx, prng); memset(prng, 0, sizeof(prng)); }
+    bool have_key = arc_prng_key(be32(bk + 8), prng);    /* the console that made it */
+    if (have_key) {
+        aes128_init_dec(&p->ctx, prng);
+        memset(prng, 0, sizeof(prng));
+    }
 
     char nm[64];
     if (tree_add(&a->tree, 0, "header.bin", false, CB_HEADER, 0, 0, K_MEM) < 0) goto bad;
-    if (icon_size && tree_add(&a->tree, 0, "icon.bin", false, icon_size, CB_HEADER, 0, K_MEM) < 0) goto bad;
+    if (icon_size && tree_add(&a->tree, 0, "icon.bin", false, icon_size, CB_HEADER, 0, K_MEM) < 0)
+        goto bad;
     snprintf(nm, sizeof(nm), "%016llx.tmd", (unsigned long long)title_id);
     if (tree_add(&a->tree, 0, nm, false, tmd_sz, d_off, 0, K_RAW) < 0) goto bad;
 
@@ -302,11 +397,13 @@ archive_t *arc_contentbin_open(const src_t *file, const char *name)
     for (int i = 0; i < t.count; i++) {
         if (!(bk[0x20 + i / 8] & (1 << (i % 8))))
             continue;                                       /* not included in this backup */
+
         const uint8_t *r = t.records + (size_t)i * 0x24;
         uint32_t cid = be32(r);
         uint16_t index = be16(r + 4);
         uint64_t size = be64(r + 8);
         uint64_t enc = align64(size);
+
         if (pos + enc > file->size + 63) break;
         if (have_key) {
             uint8_t iv[16];
@@ -314,13 +411,15 @@ archive_t *arc_contentbin_open(const src_t *file, const char *name)
             int ivi = add_iv(p, iv);
             if (ivi < 0) goto bad;
             snprintf(nm, sizeof(nm), "%08x.app", (unsigned)cid);
-            if (tree_add(&a->tree, 0, nm, false, size, pos, enc, K_CBC | ((uint32_t)ivi << 8)) < 0) goto bad;
+            if (tree_add(&a->tree, 0, nm, false, size, pos, enc, K_CBC | ((uint32_t)ivi << 8)) < 0)
+                goto bad;
         } else {
             snprintf(nm, sizeof(nm), "%08x.app.enc", (unsigned)cid);
             if (tree_add(&a->tree, 0, nm, false, enc, pos, enc, K_RAW) < 0) goto bad;
         }
         pos += enc;
     }
+
     free(tmd);
     return a;
 bad:
@@ -339,10 +438,13 @@ bool arc_databin_probe(const src_t *file, const char *name)
 {
     const char *base = strrchr(name ? name : "", '/');
     base = base ? base + 1 : (name ? name : "");
-    if (strcasecmp(base, "data.bin") || file->size < DB_HEADER + DB_BK) return false;
+    (void)base;                                 /* any name: the Bk header at its fixed place is checked */
+    if (file->size < DB_HEADER + DB_BK) return false;
     uint8_t bk[DB_BK];
     if (!src_read_full(file, DB_HEADER, bk, sizeof(bk))) return false;
-    return be32(bk) == 0x70 && be32(bk + 4) == BK_MAGIC && be32(bk + 0x10) + DB_CERTS == be32(bk + 0x1C);
+    return be32(bk) == 0x70 && be32(bk + 4) == BK_MAGIC &&
+           be32(bk + 0x10) + DB_CERTS == be32(bk + 0x1C) &&
+           (uint64_t)DB_HEADER + DB_BK + be32(bk + 0x10) <= file->size;
 }
 
 archive_t *arc_databin_open(const src_t *file, const char *name)
@@ -358,22 +460,33 @@ archive_t *arc_databin_open(const src_t *file, const char *name)
     encpriv *p = a->priv;
     aes128_init_dec(&p->ctx, ARC_SD_KEY);
 
-    /* banner.bin: the decrypted banner out of the header (tid 8, size 4, perms 1, ?, md5 16, ? 2 = 0x20) */
+    /* banner.bin: the decrypted banner out of the header (tid 8, size 4, perms 1, ?, md5 16,
+     * ? 2 = 0x20) */
     uint8_t *hdr = malloc(DB_HEADER);
-    if (!hdr || !src_read_full(file, 0, hdr, DB_HEADER)) { free(hdr); return fail(a); }
+    if (!hdr || !src_read_full(file, 0, hdr, DB_HEADER)) {
+        free(hdr);
+        return fail(a);
+    }
     aes128_cbc_decrypt(&p->ctx, ARC_SD_IV, hdr, hdr, DB_HEADER);
     uint32_t banner = be32(hdr + 8);
-    if (banner < 0x72A0 || banner > 0xF0A0) { free(hdr); return fail(a); }
+    if (banner < 0x72A0 || banner > 0xF0A0) {
+        free(hdr);
+        return fail(a);
+    }
     memmove(hdr, hdr + 0x20, banner);
     p->blob = realloc(hdr, banner);
-    if (!p->blob) { free(hdr); return fail(a); }
+    if (!p->blob) {
+        free(hdr);
+        return fail(a);
+    }
     p->blob_len = banner;
     if (tree_add(&a->tree, 0, "banner.bin", false, banner, 0, 0, K_MEM) < 0) return fail(a);
 
     uint64_t pos = DB_HEADER + DB_BK;
     for (uint32_t i = 0; i < nfiles; i++) {
         uint8_t fh[0x80];
-        if (pos + sizeof(fh) > file->size || !src_read_full(file, pos, fh, sizeof(fh)) || be32(fh) != FILE_MAGIC)
+        if (pos + sizeof(fh) > file->size || !src_read_full(file, pos, fh, sizeof(fh)) ||
+            be32(fh) != FILE_MAGIC)
             return fail(a);
         uint32_t size = be32(fh + 4);
         uint8_t type = fh[10];
@@ -388,7 +501,9 @@ archive_t *arc_databin_open(const src_t *file, const char *name)
             if (pos + enc > file->size) return fail(a);
             int ivi = add_iv(p, fh + 0x50);
             if (ivi < 0) return fail(a);
-            if (tree_add_path(&a->tree, path, false, size, pos, enc, K_CBC | ((uint32_t)ivi << 8)) < 0) return fail(a);
+            if (tree_add_path(&a->tree, path, false, size, pos, enc,
+                              K_CBC | ((uint32_t)ivi << 8)) < 0)
+                return fail(a);
             pos += enc;
         } else {
             return fail(a);

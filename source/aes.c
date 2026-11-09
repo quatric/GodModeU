@@ -4,6 +4,7 @@
 
 static uint8_t sbox[256], isbox[256];
 static uint32_t td0[256], td1[256], td2[256], td3[256];
+static uint32_t te0[256], te1[256], te2[256], te3[256];
 static int tables_ready;
 
 static uint8_t xtime(uint8_t x) { return (uint8_t)((x << 1) ^ ((x & 0x80) ? 0x1B : 0)); }
@@ -27,7 +28,10 @@ static void build_tables(void)
     uint8_t p = 1, q = 1;
     do {
         p = p ^ (uint8_t)(p << 1) ^ ((p & 0x80) ? 0x1B : 0);       /* p *= 3 */
-        q ^= q << 1; q ^= q << 2; q ^= q << 4;                      /* q /= 3 */
+        /* q /= 3 */
+        q ^= q << 1;
+        q ^= q << 2;
+        q ^= q << 4;
         if (q & 0x80) q ^= 0x09;
         uint8_t x = q ^ (uint8_t)((q << 1) | (q >> 7)) ^ (uint8_t)((q << 2) | (q >> 6)) ^
                     (uint8_t)((q << 3) | (q >> 5)) ^ (uint8_t)((q << 4) | (q >> 4));
@@ -45,6 +49,13 @@ static void build_tables(void)
         td1[i] = ror8(w);
         td2[i] = ror8(td1[i]);
         td3[i] = ror8(td2[i]);
+
+        uint8_t f = sbox[i];
+        uint32_t e = ((uint32_t)gmul(f, 2) << 24) | ((uint32_t)f << 16) | ((uint32_t)f << 8) | gmul(f, 3);
+        te0[i] = e;
+        te1[i] = ror8(e);
+        te2[i] = ror8(te1[i]);
+        te3[i] = ror8(te2[i]);
     }
     tables_ready = 1;
 }
@@ -56,15 +67,14 @@ static uint32_t rd32(const uint8_t *p)
 
 static void wr32(uint8_t *p, uint32_t v)
 {
-    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
 }
 
-void aes128_init_dec(aes128_t *ctx, const uint8_t key[16])
+static void expand_key(const uint8_t key[16], uint32_t ek[44])
 {
-    if (!tables_ready)
-        build_tables();
-
-    uint32_t ek[44];
     uint32_t rcon = 1;
     for (int i = 0; i < 4; i++)
         ek[i] = rd32(key + 4 * i);
@@ -79,13 +89,24 @@ void aes128_init_dec(aes128_t *ctx, const uint8_t key[16])
         }
         ek[i] = ek[i - 4] ^ t;
     }
+}
 
-    /* Equivalent inverse cipher: reverse the round keys and run InvMixColumns on the middle ones. */
+void aes128_init_dec(aes128_t *ctx, const uint8_t key[16])
+{
+    if (!tables_ready)
+        build_tables();
+
+    uint32_t ek[44];
+    expand_key(key, ek);
+
+    /* Equivalent inverse cipher: reverse the round keys and run InvMixColumns on the
+     * middle ones. */
     for (int r = 0; r <= 10; r++) {
         for (int c = 0; c < 4; c++) {
             uint32_t k = ek[(10 - r) * 4 + c];
             if (r != 0 && r != 10)
-                k = td0[sbox[k >> 24]] ^ td1[sbox[(k >> 16) & 255]] ^ td2[sbox[(k >> 8) & 255]] ^ td3[sbox[k & 255]];
+                k = td0[sbox[k >> 24]] ^ td1[sbox[(k >> 16) & 255]] ^ td2[sbox[(k >> 8) & 255]] ^
+                    td3[sbox[k & 255]];
             ctx->dk[r * 4 + c] = k;
         }
     }
@@ -94,7 +115,8 @@ void aes128_init_dec(aes128_t *ctx, const uint8_t key[16])
 static void dec_block(const aes128_t *ctx, const uint8_t *in, uint8_t *out)
 {
     const uint32_t *rk = ctx->dk;
-    uint32_t s0 = rd32(in) ^ rk[0], s1 = rd32(in + 4) ^ rk[1], s2 = rd32(in + 8) ^ rk[2], s3 = rd32(in + 12) ^ rk[3];
+    uint32_t s0 = rd32(in) ^ rk[0], s1 = rd32(in + 4) ^ rk[1], s2 = rd32(in + 8) ^ rk[2],
+             s3 = rd32(in + 12) ^ rk[3];
     uint32_t t0, t1, t2, t3;
     rk += 4;
     for (int r = 1; r < 10; r++, rk += 4) {
@@ -102,8 +124,12 @@ static void dec_block(const aes128_t *ctx, const uint8_t *in, uint8_t *out)
         t1 = td0[s1 >> 24] ^ td1[(s0 >> 16) & 255] ^ td2[(s3 >> 8) & 255] ^ td3[s2 & 255] ^ rk[1];
         t2 = td0[s2 >> 24] ^ td1[(s1 >> 16) & 255] ^ td2[(s0 >> 8) & 255] ^ td3[s3 & 255] ^ rk[2];
         t3 = td0[s3 >> 24] ^ td1[(s2 >> 16) & 255] ^ td2[(s1 >> 8) & 255] ^ td3[s0 & 255] ^ rk[3];
-        s0 = t0; s1 = t1; s2 = t2; s3 = t3;
+        s0 = t0;
+        s1 = t1;
+        s2 = t2;
+        s3 = t3;
     }
+
     /* last round: InvSubBytes + InvShiftRows + AddRoundKey */
     t0 = ((uint32_t)isbox[s0 >> 24] << 24) | ((uint32_t)isbox[(s3 >> 16) & 255] << 16) |
          ((uint32_t)isbox[(s2 >> 8) & 255] << 8) | isbox[s1 & 255];
@@ -119,7 +145,8 @@ static void dec_block(const aes128_t *ctx, const uint8_t *in, uint8_t *out)
     wr32(out + 12, t3 ^ rk[3]);
 }
 
-void aes128_cbc_decrypt(const aes128_t *ctx, const uint8_t iv[16], const uint8_t *in, uint8_t *out, size_t len)
+void aes128_cbc_decrypt(const aes128_t *ctx, const uint8_t iv[16], const uint8_t *in, uint8_t *out,
+                        size_t len)
 {
     uint8_t prev[16], cur[16], tmp[16];
     memcpy(prev, iv, 16);
@@ -150,6 +177,7 @@ void aes128_ecb_encrypt(const uint8_t key[16], const uint8_t in[16], uint8_t out
             n[i] = p[i] ^ n[i - 4];
         rcon = xtime(rcon);
     }
+
     uint8_t s[16];
     for (int i = 0; i < 16; i++)
         s[i] = in[i] ^ rk[0][i];
@@ -175,5 +203,56 @@ void aes128_ecb_encrypt(const uint8_t key[16], const uint8_t in[16], uint8_t out
         for (int i = 0; i < 16; i++)
             s[i] = u[i] ^ rk[r][i];
     }
+
     memcpy(out, s, 16);
+}
+
+void aes128_init_enc(aes128_enc_t *ctx, const uint8_t key[16])
+{
+    if (!tables_ready)
+        build_tables();
+    expand_key(key, ctx->ek);
+}
+
+static void enc_block(const aes128_enc_t *ctx, const uint8_t *in, uint8_t *out)
+{
+    const uint32_t *rk = ctx->ek;
+    uint32_t s0 = rd32(in) ^ rk[0], s1 = rd32(in + 4) ^ rk[1], s2 = rd32(in + 8) ^ rk[2],
+             s3 = rd32(in + 12) ^ rk[3];
+    uint32_t t0, t1, t2, t3;
+    rk += 4;
+    for (int r = 1; r < 10; r++, rk += 4) {
+        t0 = te0[s0 >> 24] ^ te1[(s1 >> 16) & 255] ^ te2[(s2 >> 8) & 255] ^ te3[s3 & 255] ^ rk[0];
+        t1 = te0[s1 >> 24] ^ te1[(s2 >> 16) & 255] ^ te2[(s3 >> 8) & 255] ^ te3[s0 & 255] ^ rk[1];
+        t2 = te0[s2 >> 24] ^ te1[(s3 >> 16) & 255] ^ te2[(s0 >> 8) & 255] ^ te3[s1 & 255] ^ rk[2];
+        t3 = te0[s3 >> 24] ^ te1[(s0 >> 16) & 255] ^ te2[(s1 >> 8) & 255] ^ te3[s2 & 255] ^ rk[3];
+        s0 = t0;
+        s1 = t1;
+        s2 = t2;
+        s3 = t3;
+    }
+    /* last round: SubBytes + ShiftRows + AddRoundKey */
+    t0 = ((uint32_t)sbox[s0 >> 24] << 24) | ((uint32_t)sbox[(s1 >> 16) & 255] << 16) |
+         ((uint32_t)sbox[(s2 >> 8) & 255] << 8) | sbox[s3 & 255];
+    t1 = ((uint32_t)sbox[s1 >> 24] << 24) | ((uint32_t)sbox[(s2 >> 16) & 255] << 16) |
+         ((uint32_t)sbox[(s3 >> 8) & 255] << 8) | sbox[s0 & 255];
+    t2 = ((uint32_t)sbox[s2 >> 24] << 24) | ((uint32_t)sbox[(s3 >> 16) & 255] << 16) |
+         ((uint32_t)sbox[(s0 >> 8) & 255] << 8) | sbox[s1 & 255];
+    t3 = ((uint32_t)sbox[s3 >> 24] << 24) | ((uint32_t)sbox[(s0 >> 16) & 255] << 16) |
+         ((uint32_t)sbox[(s1 >> 8) & 255] << 8) | sbox[s2 & 255];
+    wr32(out, t0 ^ rk[0]);
+    wr32(out + 4, t1 ^ rk[1]);
+    wr32(out + 8, t2 ^ rk[2]);
+    wr32(out + 12, t3 ^ rk[3]);
+}
+
+void aes128_cbc_encrypt(const aes128_enc_t *ctx, uint8_t iv[16], const uint8_t *in, uint8_t *out, size_t len)
+{
+    for (size_t off = 0; off + 16 <= len; off += 16) {
+        uint8_t x[16];
+        for (int i = 0; i < 16; i++)
+            x[i] = in[off + i] ^ iv[i];
+        enc_block(ctx, x, out + off);
+        memcpy(iv, out + off, 16);
+    }
 }

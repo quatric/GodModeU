@@ -18,9 +18,9 @@ bool risk_forced(void) { return g_forced; }
 void risk_lock(void) { g_unlocked = false; }
 
 static const u32 KONAMI[10] = {
-    BTN_UP, BTN_UP, BTN_DOWN, BTN_DOWN,
-    BTN_LEFT, BTN_RIGHT, BTN_LEFT, BTN_RIGHT,
-    BTN_B, BTN_A,
+    WPAD_BUTTON_UP, WPAD_BUTTON_UP, WPAD_BUTTON_DOWN, WPAD_BUTTON_DOWN,
+    WPAD_BUTTON_LEFT, WPAD_BUTTON_RIGHT, WPAD_BUTTON_LEFT, WPAD_BUTTON_RIGHT,
+    WPAD_BUTTON_B, WPAD_BUTTON_A,
 };
 static const char *const KONAMI_GLYPH[10] = { "UP", "UP", "DN", "DN", "LT", "RT", "LT", "RT", " B", " A" };
 
@@ -49,7 +49,7 @@ static void draw_gate(const char *title, const char *const *lines, int n, int pr
     ui_goto(r, left);
     for (int i = 0; i < 10; i++) {
         ui_color(i < progress ? C_GREEN : C_WHITE, i < progress);
-        ui_printf("[%s] ", KONAMI_GLYPH[i]);
+        printf("[%s] ", KONAMI_GLYPH[i]);
     }
     ui_reset();
     ui_color(C_CYAN, true);
@@ -62,13 +62,13 @@ static bool konami_gate(const char *title, const char *const *lines, int n)
 {
     int progress = 0;
     draw_gate(title, lines, n, progress);
-    const u32 mask = BTN_UP | BTN_DOWN | BTN_LEFT |
-                     BTN_RIGHT | BTN_A | BTN_B | BTN_HOME;
+    const u32 mask = WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT |
+                     WPAD_BUTTON_RIGHT | WPAD_BUTTON_A | WPAD_BUTTON_B | WPAD_BUTTON_HOME;
     while (progress < 10) {
         u32 p = DetectInput(IN_DOWN) & mask;
         if (!p)
             continue;
-        if (p & BTN_HOME)
+        if (p & WPAD_BUTTON_HOME)
             return false;
         if (p == KONAMI[progress])
             progress++;
@@ -156,7 +156,7 @@ bool risk_startup_poll(u32 min_ms, u64 began_ms)
 {
     int progress = 0;
     bool hit = false;
-    const u32 mask = BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT | BTN_A | BTN_B;
+    const u32 mask = WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT | WPAD_BUTTON_A | WPAD_BUTTON_B;
     while (OSTicksToMilliseconds(OSGetSystemTime()) - began_ms < min_ms) {
         u32 p = input_poll_nowait() & mask;     /* waits one frame */
         if (!p)

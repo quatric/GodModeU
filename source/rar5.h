@@ -7,7 +7,7 @@
 #include "unarr-imp.h"
 
 /* A small RAR5 reader (the unarr library only reads RAR 1.5 - 4.x).
- * Single volume, no encryption, no symlinks. Modelled on the public format
+ * Single volume, no encryption, no symlinks. Modeled on the public format
  * description in libarchive / the RAR 5.0 technote. */
 
 typedef struct rar5 rar5_t;
@@ -34,6 +34,10 @@ int rar5_next(rar5_t *r, rar5_entry *e);
 bool rar5_extract(rar5_t *r, rar5_sink sink, void *ud);
 
 const char *rar5_error(const rar5_t *r);
+
+/* Tells the reader the archive unpacks to `total` bytes in all, so its window needn't be larger
+ * than that even when the dictionary is. */
+void rar5_limit_dict(rar5_t *r, uint64_t total);
 
 /* Restarts at the first file. */
 bool rar5_rewind(rar5_t *r);

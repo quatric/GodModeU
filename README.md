@@ -9,7 +9,7 @@ the protected storage.
 > ## ⚠️ BRICK RISK
 >
 > **GodModeU can permanently brick your console.**
-> Writing, deleting or renaming files on the Wii U's internal storage (MLC) or on the vWii NAND (SLC) can leave the
+> Writing, deleting or renaming files on the Wii U's internal storage (MLC), its system NAND (SLC) or the vWii NAND can leave the
 > console unbootable.
 >
 > * Everything on protected storage is **locked by default**. Copying *from* it is always safe.
@@ -22,49 +22,108 @@ the protected storage.
 
 ## Status
 
-**Not yet tested on a real Wii U or in an emulator.** The project builds with devkitPPC and
-[wut](https://github.com/devkitPro/wut) (wut 1.9.1, the version in devkitPro's package index), but every part that talks to
-the console has only been checked by reading the wut headers. Expect fixes. The points most likely to need them are
-listed under [Unverified assumptions](#unverified-assumptions). Reports from real hardware are very welcome.
+**Not yet tested on a real Wii U or in an emulator.** It builds with devkitPPC and
+[wut](https://github.com/devkitPro/wut), and the file format readers were checked on a PC against nintoolbox's Wii U test
+files, but everything that talks to the console has only been checked against the wut headers and the tools it follows.
+Expect fixes. [Unverified assumptions](#unverified-assumptions) lists the parts most likely to need them. Reports from
+real hardware are very welcome.
+
+## What's new in this version
+
+GodModeU now runs on the same code as [GodModeWii](https://github.com/quatric/GodModeWii), so everything added there lately is
+here too: the viewers and players, the extra archive and disk formats, the editors, the HOME menu tools and the themes. On top
+of that it has things only a Wii U can do:
+
+* **Input through [libwiiuinput](https://github.com/quatric/libwiiuinput)** instead of hard-coded GamePad / Wii Remote code:
+  the GamePad (buttons and touch screen), Wii Remotes with a Nunchuk or Classic Controller, Wii U Pro Controllers, the GameCube
+  adapter, USB game controllers, USB keyboards and mice, pen tablets and microphones, all hot-pluggable.
+* **Wii U file formats**: see [What it can open](#what-it-can-open).
+* **Installing Wii U titles** from WUP folders and **WUD / WUX disc images**: see [Installing Wii U titles](#installing-wii-u-titles).
+* **NAND / MLC backup instructions** in the HOME menu: see [NAND backup](#nand-backup).
+* Fixed mount points: USB drives are `/vol/storage_usb01` / `02` (the old `/vol/external01` was the SD card) and the vWii NAND is
+  `/vol/storage_slccmpt01`. The Wii U system NAND (SLC) is now a drive too.
 
 ## Drives
 
 | Drive | Path | Notes |
 | --- | --- | --- |
 | SD card | `sd:/` | read / write. Mounted with `WHBMountSdCard` |
-| USB drives | `usb1:/` ... `usb8:/` | every volume Cafe OS mounts (`/vol/external01` ... `external08`). FAT, exFAT and WFS are handled by the system |
-| Wii U storage (MLC) | `mlc:/` | the console's internal storage. Protected: Konami code to change anything |
-| vWii NAND (SLC) | `nand:/` | the vWii NAND. Protected, and only visible if the app is allowed to mount it (Aroma / Mocha) |
+| USB drives | `usb1:/`, `usb2:/` | Wii U formatted (WFS) drives as Cafe OS mounts them (`/vol/storage_usb01`, `02`) |
+| Wii U storage (MLC) | `mlc:/` | the console's internal storage (`/vol/storage_mlc01`). Protected: Konami code to change anything |
+| vWii NAND (SLCCMPT) | `nand:/` | the vWii NAND (`/vol/storage_slccmpt01`). Protected |
+| Wii U system NAND (SLC) | `slc:/` | `/vol/system`. Protected |
 
-Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
+The protected drives only appear when the app may mount them (Aroma with the Mocha / MochaPayload module). Remount drives
+from the HOME menu after inserting or removing one.
 
-## Features
+## What it can open
 
-* One text interface for every drive, with free space and a usage bar.
-* **Open archives like folders** (read-only, copy out only): press **A** on a
-  U8 archive (`.arc`, `.app`, `.bnr`, `.carc` ... also with an IMET or IMD5 header), an **LZ10 / LZ11** file, a **WAD**, a
-  **`content.bin`**, a **`data.bin`** or a **VFF** (`.vff`). Archives nest (`sd:/x.wad|/00000001.app|/meta/banner.bin`),
-  **B** goes back out, copy anything out with **+** / the actions menu. A **WFS image** file (a dump of a Wii U USB drive
-  or the MLC) opens the same way; its keys are read from `sd:/wfs/` (see below).
-* Copy, cut, paste and delete between any two writable drives, folders included, with a progress screen,
-  transfer speed, overwrite / skip prompts and **hold B to cancel**. Half-written files are removed again.
-* Multi-select, select all / invert, rename, new folder, folder size / info, a text viewer and a hex viewer.
-* **Read-only FAT files and folders can be deleted.** Copy / move / delete summaries keep the result line (files, size, time)
-  and let you page through every problem with **L / R** (**-** / **+**).
+Press **A** on a file and the viewer is picked by **what is in the file** (its magic bytes, after nintoolbox's detection), not by
+its name. Everything GodModeWii opens opens here as well (see its README for the full lists): GameCube / Wii archives, disc
+images, disks and partitions (ext2/3/4, XFS, HFS+, APFS, ZFS, MBR / GPT), zip / 7z / RAR, PDF and EPUB, WADs, `content.bin`,
+`data.bin`, VFF, BootMii `nand.bin`, WFS images, and the image, audio, MIDI, video and text viewers.
+
+**Wii U formats** (big endian, Cafe NintendoWare and first-party; Switch files are not handled):
+
+| Kind | Formats |
+| --- | --- |
+| Archives (open like folders) | **SARC** (`.sarc`, `.pack`, and `.szs` once its Yaz0 is undone), **BFSAR** (every internal file, named after its sound, bank, wave archive or group), **BFWAR** (its waves), **BARS** (each asset's FWAV / FSTP, named from its AMTA), **NUS3AUDIO** |
+| Images | **GTX** (every texture), **BFLIM**, **BFFNT** (glyph sheets), **BFRES** (its FTEX textures), **NUT** (Smash Bros. for Wii U), **DDS**, and Retro Studios' Wii U **TXTR** (Donkey Kong Country: Tropical Freeze; LZSS or zlib buffers). Every GX2 tile mode (linear, 1D and 2D / 2B macro tiling with pipe and bank swizzle) and format: R8 to RGBA32F, RGB565, RGB5A1, RGBA4, RGB10A2, R11G11B10F, depth, and BC1 - BC5 (BC5 normal maps get their Z rebuilt so they look like normal maps) |
+| Audio | **BFSTM**, **BFWAV**, **BTSND** (the boot sound), as before |
+| Text | **BYAML / BYML** (v1 - v4, as a YAML-style tree), **XMB** (Smash Bros., as elements and attributes), **AAMP** parameter files and **BGLPBD** light probes (lists, objects and values), **BFLYT** (textures, fonts, materials, the pane tree with positions, sizes and texts), **BFLAN** (the tag, its groups, and what each pane / material animates), **BFSEQ** (its labels) |
+| Disc images | **WUD**, **WUX** and wudump's `game_part1.wud`: install (below) |
+
+Textures are only expanded when shown, so a BFRES with dozens of them opens quickly; **+** / **-** steps through them as in the
+GameCube / Wii image viewer.
+
+## Installing Wii U titles
+
+**WUP folders** (`title.tmd`, `title.tik`, `title.cert`, the `.app` contents and their `.h3` hashes) install through the system's
+own installer (MCP), the way [WUP Installer GX2](https://github.com/Fangal-Airbag/wup-installer-gx2) does it:
+
+1. Copy the folder to the SD card, for example `sd:/install/<name>/`.
+2. Press **A** on its `title.tmd`, or put the cursor on the folder (or mark several) and pick *Install Wii U title (WUP)*.
+3. Choose the internal storage or a USB drive. A progress bar shows the bytes written.
+
+Games, updates, DLC and demos can be installed; system titles are refused. Titles not signed by Nintendo for this console
+(eShop dumps, DLC, homebrew) need **signature patches** (Aroma's sigpatches module, as WUP Installer GX2 needs). The common
+errors are explained when they happen: no USB drive, not enough space, a bad or foreign ticket, an SD card problem (format it
+FAT32 with 32 KB clusters).
+
+**WUD / WUX disc images**: press **A** on a `.wud`, a `.wux` or wudump's `game_part1.wud`. GodModeU reads the disc's partition
+table, the SI partition's ticket, TMD and certificates and the game (GM) partition, and writes it out as a WUP folder in
+`sd:/install/<disc name>/` the way FIX94's [wud2app](https://github.com/FIX94/wud2app) does; then it installs that folder
+(and offers to delete it). *Show the partitions* lists them. It needs:
+
+* the **disc key**: wudump's `game.key` next to the image, or `<image name>.key`;
+* the **Wii U common key**: `common.key` (16 bytes, or 32 hex digits), or the `otp.bin` from a NAND backup, in
+  `sd:/wiiu/apps/GodModeU/`, at the root of the SD card or next to the image. Each one found is tried until the game's file
+  table decrypts, so a wrong key is reported, never used;
+* room on the SD card for the whole game (no file of a game is over 4 GB, so FAT32 is fine).
+
+Hold **B** to cancel the conversion. The HOME menu's *Install Wii U titles (WUP / WUD help)* has the same instructions on the
+console.
+
+## NAND backup
+
+*Back up the NAND / MLC (how to)* in the HOME menu explains how to make a full backup with
+[nanddumper](https://github.com/GaryOderNichts/nanddumper) under Aroma (as on [wiiu.hacks.guide](https://wiiu.hacks.guide/)):
+put it in `sd:/wiiu/apps/`, start it, set SLC, SLCCMPT, OTP and SEEPROM to *Yes* (MLC too if the card has room: 8 GB or 32 GB
+more), press **A**, then copy `slc.bin`, `slccmpt.bin`, `otp.bin`, `seeprom.bin` and `mlc.bin.part*` off the card and keep them
+safe. Cafe OS doesn't let an app read the NAND chips raw, so GodModeU itself only copies files. Its `otp.bin` is also what
+GodModeU needs for WUD images.
+
+## Other features
+
+* One text interface for every drive, with free space and a usage bar, and the GodModeWii browser: copy, cut, paste and delete
+  with progress and **hold B to cancel**, multi-select, rename, new folder, info, disk usage, text / hex viewers and editors.
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or
-  off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`). While it is on, nothing asks for the warning or code.
-* Konami-code gate (asked once, when you first try to change protected storage) and brick warnings.
-* A built-in **FTP server** (SYSTEM → *FTP server*): LAN only, login with a random password per run, sandboxed paths,
-  read-only unless you pick read / write, and protected storage still needs the Konami code on the console.
-  Plain FTP, no TLS, so only use it on a network you trust.
-* **FTP install server** (SYSTEM → *FTP install server (archives to SD / USB)*): upload a **`.zip`, `.7z` or `.rar`**
-  (RAR 1.5 - 5.x, single volume, no password) to it and it is unpacked onto the SD card or the first USB drive right away,
-  then the archive is deleted. The files go where they belong: an archive that already holds the drive layout
-  (`wiiu/apps/...`, `apps/...`, `wad/...`) is unpacked at the root of the drive, a wrapper folder around it is dropped,
-  a single program folder (`Foo/Foo.rpx`) goes to `wiiu/apps/Foo`, and loose files get a folder named after the archive
-  (`.wad` files go to `wad/`, Aroma `.wps` plugins to `wiiu/environments/aroma/plugins/`). Docs (`.txt`, `.md`...) at the
-  top level of a ready-made layout are skipped. A failed or cancelled install keeps the archive; hold **B** to cancel.
-  Large 7z and RAR archives need RAM for their dictionary, so an archive can be refused on low memory.
+  off (saved as `sd:/wiiu/apps/GodModeU/force.cfg`).
+* **HOME menu**: lock the protected drives again, remount, FTP server, FTP install server, Wiiload (homebrew `.rpx` / `.wuhb`
+  pushed over the network is saved to `sd:/wiiu/apps/`), export all vWii saves, Miis, sketchpad, voice memos, sound effects,
+  alarm clock, calculator, clock and calendar, themes, the NAND backup and title install help, credits, exit to the Homebrew
+  Launcher / Wii U Menu, restart, power off.
+* **FTP server** and **FTP install server**: see [FTP server](#ftp-server).
 
 ### Controls
 
@@ -72,41 +131,34 @@ Remount drives from the SYSTEM menu (HOME) after inserting or removing a drive.
 | --- | --- |
 | D-Pad Up / Down | Move (hold to scroll) |
 | D-Pad Left / Right | Page up / down |
-| **A** | Open folder or archive / actions menu on any other file / paste on the green `Paste` row |
+| **A** | Open folder, archive or file / paste on the green `Paste` row |
 | **B** | Go up one folder (back to the drive list at the top) |
-| **Y** | Mark / unmark the item and move down / clear the clipboard on the green `Paste` row |
-| **X** | Actions menu (paste, clear clipboard, copy, cut, delete, rename, new folder, info, text viewer, hex viewer, selection tools) |
-| **+** | Copy the marked items (or the item under the cursor). **R** and **ZR** do the same |
-| **-** | Cut the marked items. **L** and **ZL** do the same |
-| **HOME** | SYSTEM menu: lock risky options again, remount drives, FTP server, credits, exit. **Press HOME again to leave** |
+| **Y** (Wii Remote **1**) | Mark / unmark the item and move down / clear the clipboard on the `Paste` row |
+| **X** (Wii Remote **2**) | Actions menu |
+| **+** | Copy the marked items (or the item under the cursor) |
+| **-** | Cut the marked items |
+| **HOME** | HOME menu (HOME or B closes it) |
+| Touch screen | Point and tap (a tap is **A**) |
 
-Copy or cut something, browse to the destination and press **A** on the green `Paste` row at the top of the list
-(or use *Paste* in the actions menu). A copy stays in the clipboard so you can paste it in several places. To empty the
-clipboard without pasting, press **Y** (**1** on a Wii Remote) on the `Paste` row or pick *Clear clipboard* in the actions menu.
-
-The GamePad is the primary input. A Wii Remote with a Classic Controller works as well, and so does a Wii Remote on
-its own (D-Pad, A, B, 1, 2, +, -, HOME). The Classic Controller mapping follows GlowWii's.
+Every controller libwiiuinput reads works; the buttons are folded into the Wii Remote's.
 
 ## What was left out compared to GodModeWii
 
-These depend on the Wii's IOS, the Wii's hardware or the vWii, and have no equivalent in a native Cafe OS app:
+These depend on the Wii's IOS, the Wii's hardware or GX, and have no equivalent in a native Cafe OS app:
 
-* the Wii NAND through IOS (ISFS) and its permission patch, and the Homebrew Channel / BootMii key tricks
-* the SEEPROM and OTP readers, and the `keys:/` console keys drive
-* the Wii disc drive (`disc:/`) and raw Wii disc images
-* SD Gecko slots and GameCube memory cards
+* the 3D model viewer, the drawn BRLYT layout viewer and the Mii faces (they draw with GX; layouts fall back to their text view)
+* WAD installing, wad2bin, YABDM-style WAD backups and Wii Menu themes (they need IOS and the Wii's keys)
+* the Wii NAND through IOS (ISFS), raw NAND dumping (nanddumper@IOS), the SEEPROM / OTP readers and the `keys:/` drive
+* the Wii disc drive, TinyLoad, SD Gecko slots, GameCube memory cards and the disc slot light
 * the runtime IOS patch and the Dolphin / vWii detection
-* the Wii-only controller libraries (libwiidrc, libwupc, libsicksaxis). The GamePad and Wii Remotes are read through Cafe OS
-  instead. Wii U Pro Controller, PS3 pads and USB keyboards aren't supported yet
-* the `content.bin` and `data.bin` decryption that needs this console's own keys. WAD contents still decrypt with the
-  common keys.
 
 ## FTP server
 
 SYSTEM → *FTP server (read-only)* or *(read/write)* opens a status screen with the address, the user name (`godmode`) and a
 fresh random password. Connect with any FTP client; every drive shows up as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, ...).
 
-* **Login is always required**; the password is random per run. Failed logins are throttled and a burst of them locks the server for a minute.
+* **Login is required** by default (a random password per run); the status screen can switch to an open login for a trusted LAN.
+  Failed logins are throttled and a burst of them locks the server for a minute.
 * **LAN only**: peers outside private / link-local ranges are refused.
 * **No FTP bounce / hijack**: `PORT` must point back at the client (port >= 1024) and passive data connections must come from the client's IP.
 * **Sandboxed paths**: every path is canonicalised inside the virtual root.
@@ -114,56 +166,56 @@ fresh random password. Connect with any FTP client; every drive shows up as a fo
 * **Safe uploads**: files go to a temporary name and only replace the target when complete.
 * `RMD` only removes empty folders; nothing is deleted recursively over the network.
 
-Supported commands: `LIST`, `NLST`, `MLSD`, `RETR` (with `REST`), `STOR`, `DELE`, `MKD`, `RMD`, `RNFR` / `RNTO`, `SIZE`,
-`PASV`, `EPSV`, `PORT`.
+The **FTP install server** unpacks uploaded `.zip`, `.7z` and `.rar` files onto the SD card or the first USB drive.
 
 ## Unverified assumptions
 
-These are the things I could not check without a console or an emulator. Each one is a single constant or a short function,
-so they're easy to change once they've been tried:
+These could not be checked without a console. Each is a constant or a short function:
 
-* **Mount points**: `/vol/external01`..`08` for USB, `/vol/storage_mlc01` for MLC, `/vol/slc01` for the vWii NAND. The SD
-  card uses whatever `WHBGetSdCardMountPath()` returns (`source/vfs.c`).
-* **Colours**: OSScreen text is white only, so colours only tint backgrounds (highlight bars). Text colours are ignored.
-* **Networking**: the IP comes from `ACGetAssignedAddress`, and the FTP server runs on the BSD sockets from wut's `nsysnet`.
-* **Archive readers** are the same code as GodModeWii and were only checked against generated samples on a PC.
-  The WFS reader was never tested against a real Wii U drive.
+* **Mount points**: `/vol/storage_usb01` / `02` for USB, `/vol/storage_mlc01`, `/vol/storage_slccmpt01` and `/vol/system`
+  (`source/vfs.c`).
+* **Screen**: a 640x480 framebuffer (GodModeWii's) drawn 1.5x on the TV and 1:1 on the GamePad through OSScreen (`source/wiiu/screen.c`).
+* **Sound**: GodModeWii's ASND voices mixed in software onto two AX voices (`source/wiiu/asnd.c`).
+* **Installing**: the MCP install path `/vol/app_sd/...` for the SD card, as WUP Installer GX2 uses it (`source/wiiu_install.c`).
+* **Wii U texture tiling**: checked against nintoolbox's BFRES and GTX samples on a PC; BFFNT sheets after the first use a
+  guessed swizzle, and NUT files from the Wii U use tile mode 4.
 
 ## Installation
 
-Build the app (below), then copy the result to the SD card:
-
-* **Aroma** (or any launcher that runs `.wuhb` files): copy `GodModeU.wuhb` to `sd:/wiiu/apps/`.
+* **Aroma**: copy `GodModeU.wuhb` to `sd:/wiiu/apps/`.
 * **Homebrew Launcher**: copy the `GodModeU` folder from the release zip (`GodModeU.rpx`, `meta.xml`, `icon.png`)
   to `sd:/wiiu/apps/GodModeU/`.
 
+Settings, themes, drawings and memos live in `sd:/wiiu/apps/GodModeU/`.
+
 ## Building
 
-You need [devkitPro](https://devkitpro.org/) with devkitPPC and the wut toolchain:
+You need [devkitPro](https://devkitpro.org/) with devkitPPC, wut and these portlibs:
 
 ```sh
-dkp-pacman -S wut wut-tools
-export DEVKITPRO=/opt/devkitpro
+dkp-pacman -S wut wut-tools ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-libvorbisidec ppc-libogg ppc-bzip2 ppc-zlib
+git submodule update --init --recursive
+export DEVKITPRO=/opt/devkitpro DEVKITPPC=/opt/devkitpro/devkitPPC
 make
 ```
 
-This produces `GodModeU.rpx` (the executable) and `GodModeU.wuhb` (the package for Aroma). The CI builds every push
-(download the `GodModeU` artifact), and pushing a tag like `v0.1.0` publishes a GitHub Release with the zip.
+`make` builds the `libwiiuinput` submodule first, then `GodModeU.rpx` and `GodModeU.wuhb`. The CI builds every push
+(download the `GodModeU` artifact), and pushing a tag like `v0.5.0` publishes a GitHub Release with the zip.
 
 ## Credits
 
 GodModeU is built on a lot of other people's work. Thank you!
 
+* **[GodModeWii](https://github.com/quatric/GodModeWii)** (quatric & cmyksoda): the code this port is made of, and its credits.
 * **[GodMode9](https://github.com/d0k3/GodMode9)** by d0k3: the look, feel and workflow this tool is modelled on.
-* **[GodMode9i](https://github.com/DS-Homebrew/GodMode9i)** by the DS-Homebrew team: the DSi / DS take on the same idea.
+* **[nintoolbox](https://github.com/quatric/nintoolbox)** (quatric): the file type detection and the Wii U format readers
+  (GX2 tiling after aboood40091's addrlib.py, BFRES / GTX / BFLIM / BFFNT, SARC, BFSAR, BARS, NUS3AUDIO, BYML, XMB, AAMP, BFLYT).
+* **[libwiiuinput](https://github.com/quatric/libwiiuinput)** (quatric): every controller.
+* **[WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2)** (Dimok, Crediar, xhp-creations, and the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages.
+* **[wud2app](https://github.com/FIX94/wud2app)** by FIX94 (MIT): the WUD layout and how it becomes a WUP folder.
+* **[nanddumper](https://github.com/GaryOderNichts/nanddumper)** by GaryOderNichts and **[wiiu.hacks.guide](https://wiiu.hacks.guide/)**: the NAND backup instructions.
 * **[ftpii](https://code.google.com/p/ftpii/source/list)** by Joseph Jordan and contributors: the FTP idea.
-* **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors, and the niuus fork: the file-manager reference.
-* **GlowWii**: the Classic Controller button mapping (carried over from GodModeWii).
-* **Sharpii** and **libWiiSharp** (Leathl and contributors): WAD, U8, IMD5 and LZ77 (LZ10 / LZ11) layouts.
-* **[wad2bin](https://github.com/DarkMatterCore/wad2bin)** by DarkMatterCore: the `content.bin` layout and the IMET / U8 handling.
-* **Dolphin's WiiSave code**: the `data.bin` layout.
-* **wfslib** and **wfs-tools** by koolkdev: the WFS layout that the WFS image reader follows.
-* **vffmod** (wii-tools): the VFF layout.
+* **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors: the file-manager reference.
+* **wfslib** and **wfs-tools** by koolkdev: the WFS layout.
 * **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
-* **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside): the zip, 7z and RAR (up to 4.x) readers of the FTP installer. RAR5 is read by `source/rar5.c`, written from the public format description.
-* **GodModeWii** (quatric): the code this port starts from.
+* **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA SDK by Igor Pavlov inside).

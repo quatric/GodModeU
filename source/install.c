@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <ctype.h>
 #include <malloc.h>
 
 #include "install.h"
@@ -26,8 +25,9 @@
 static const char *const ROOTS[] = { "wiiu", "install", "config", "apps", "wad", "private", NULL };
 #define APPS_BASE "wiiu/apps/"
 #else
-static const char *const ROOTS[] = { "apps", "wad", "private", "games", "wbfs", "riivolution", "codes", "txtcodes",
-                                     "wiiflow", "usb-loader", "nincfg", NULL };
+static const char *const ROOTS[] = { "apps",    "wad",         "private", "games",
+                                     "wbfs",    "riivolution", "codes",   "txtcodes",
+                                     "wiiflow", "usb-loader",  "nincfg",  NULL };
 #define APPS_BASE "apps/"
 #endif
 
@@ -55,7 +55,8 @@ static bool is_doc_ext(const char *e)
 
 static bool is_junk(const char *n)
 {
-    return !strncasecmp(n, "__MACOSX", 8) || strstr(n, ".DS_Store") || strstr(n, "Thumbs.db") || strstr(n, "desktop.ini");
+    return !strncasecmp(n, "__MACOSX", 8) || strstr(n, ".DS_Store") || strstr(n, "Thumbs.db") ||
+           strstr(n, "desktop.ini");
 }
 
 /* Cleans an archive path in place: forward slashes, no leading "/", no "." or
@@ -71,7 +72,10 @@ static bool clean_path(char *p)
         char *e = r;
         while (*e && *e != '/' && *e != '\\') e++;
         size_t n = (size_t)(e - r);
-        if ((n == 1 && r[0] == '.') ) { r = e; continue; }
+        if ((n == 1 && r[0] == '.')) {
+            r = e;
+            continue;
+        }
         if (n == 2 && r[0] == '.' && r[1] == '.') return false;
         if (w != p) *w++ = '/';
         for (size_t i = 0; i < n; i++) {
@@ -89,9 +93,18 @@ typedef struct {
     int strip;                 /* leading folders to drop (0 or 1) */
     char prepend[MAX_NAME];    /* folder to put in front, "" or "apps/x/" */
     bool drop_docs;            /* skip loose readme-type files at the top */
+    int napps;                 /* apps-only mode: program folders found in the archive */
+    struct app_dir {
+        char src[MAX_NAME];
+        char dst[MAX_NAME];
+    } *apps;
 } layout_t;
 
-typedef struct { char *name; bool dir; u64 size; } ent_t;
+typedef struct {
+    char *name;
+    bool dir;
+    u64 size;
+} ent_t;
 
 static const char *after_first(const char *p)
 {
@@ -125,16 +138,23 @@ static void decide_layout(const ent_t *e, int n, const char *stem, layout_t *L)
         const char *sl = strchr(p, '/');
         if (!sl) {
             if (!e[i].dir) nloose++;
-            else if (!top1[0]) { snprintf(top1, sizeof(top1), "%s", p); ndirs_top++; }
-            else if (strcasecmp(top1, p)) multi_top = true;
+            else if (!top1[0]) {
+                snprintf(top1, sizeof(top1), "%s", p);
+                ndirs_top++;
+            } else if (strcasecmp(top1, p))
+                multi_top = true;
         } else {
             size_t l = (size_t)(sl - p);
             char t[MAX_NAME];
             snprintf(t, sizeof(t), "%.*s", (int)l, p);
-            if (!top1[0]) { snprintf(top1, sizeof(top1), "%s", t); ndirs_top++; }
-            else if (strcasecmp(top1, t)) multi_top = true;
+            if (!top1[0]) {
+                snprintf(top1, sizeof(top1), "%s", t);
+                ndirs_top++;
+            } else if (strcasecmp(top1, t))
+                multi_top = true;
             if (is_root_name(t, l)) nroots++;
         }
+
         if (!e[i].dir) {
             nfiles++;
             const char *x = ext_of(p);
@@ -142,7 +162,8 @@ static void decide_layout(const ent_t *e, int n, const char *stem, layout_t *L)
 #ifdef __WIIU__
             if (strcasecmp(x, "wps")) only_wps = false;
 #endif
-            if (!strcasecmp(x, "dol") || !strcasecmp(x, "elf") || !strcasecmp(x, "rpx") || !strcasecmp(x, "wuhb"))
+            if (!strcasecmp(x, "dol") || !strcasecmp(x, "elf") || !strcasecmp(x, "rpx") ||
+                !strcasecmp(x, "wuhb"))
                 has_exec = true;
         }
     }
@@ -151,6 +172,7 @@ static void decide_layout(const ent_t *e, int n, const char *stem, layout_t *L)
         L->drop_docs = true;
         return;
     }
+
     if (ndirs_top == 1 && !multi_top && nloose == 0) {
         /* one wrapper folder: is the drive layout inside it? */
         bool inner_roots = false;
@@ -158,33 +180,155 @@ static void decide_layout(const ent_t *e, int n, const char *stem, layout_t *L)
             const char *rest = after_first(e[i].name);
             if (!rest) continue;
             const char *sl = strchr(rest, '/');
-            if (sl && is_root_name(rest, (size_t)(sl - rest))) { inner_roots = true; break; }
-            if (!sl && e[i].dir && is_root_name(rest, strlen(rest))) { inner_roots = true; break; }
+            if (sl && is_root_name(rest, (size_t)(sl - rest))) {
+                inner_roots = true;
+                break;
+            }
+            if (!sl && e[i].dir && is_root_name(rest, strlen(rest))) {
+                inner_roots = true;
+                break;
+            }
         }
-        if (inner_roots) { L->strip = 1; L->drop_docs = true; return; }
-        if (nfiles && only_wad) { L->strip = 1; snprintf(L->prepend, sizeof(L->prepend), "wad/"); return; }
+
+        if (inner_roots) {
+            L->strip = 1;
+            L->drop_docs = true;
+            return;
+        }
+        if (nfiles && only_wad) {
+            L->strip = 1;
+            snprintf(L->prepend, sizeof(L->prepend), "wad/");
+            return;
+        }
 #ifdef __WIIU__
-        if (nfiles && only_wps) { L->strip = 1; snprintf(L->prepend, sizeof(L->prepend), "wiiu/environments/aroma/plugins/"); return; }
+        if (nfiles && only_wps) {
+            L->strip = 1;
+            snprintf(L->prepend, sizeof(L->prepend), "wiiu/environments/aroma/plugins/");
+            return;
+        }
 #endif
         snprintf(L->prepend, sizeof(L->prepend), "%s", APPS_BASE);      /* the folder is the app */
         return;
     }
+
     /* loose files, or several unrelated folders */
-    if (nfiles && only_wad) { snprintf(L->prepend, sizeof(L->prepend), "wad/"); return; }
+    if (nfiles && only_wad) {
+        snprintf(L->prepend, sizeof(L->prepend), "wad/");
+        return;
+    }
 #ifdef __WIIU__
-    if (nfiles && only_wps) { snprintf(L->prepend, sizeof(L->prepend), "wiiu/environments/aroma/plugins/"); return; }
+    if (nfiles && only_wps) {
+        snprintf(L->prepend, sizeof(L->prepend), "wiiu/environments/aroma/plugins/");
+        return;
+    }
     if (nfiles == 1 && nloose == 1) {
         for (int i = 0; i < n; i++)
-            if (!e[i].dir && !strcasecmp(ext_of(e[i].name), "wuhb")) { snprintf(L->prepend, sizeof(L->prepend), "wiiu/apps/"); return; }
+            if (!e[i].dir && !strcasecmp(ext_of(e[i].name), "wuhb")) {
+                snprintf(L->prepend, sizeof(L->prepend), "wiiu/apps/");
+                return;
+            }
     }
 #endif
+
     (void)has_exec;
     snprintf(L->prepend, sizeof(L->prepend), "%s%s/", APPS_BASE, stem);
+}
+
+static bool is_prog(const char *name)
+{
+    const char *x = ext_of(name);
+#ifdef __WIIU__
+    /* Wii U programs: the Homebrew Launcher's .rpx / .elf, Aroma's .wuhb */
+    return !strcasecmp(x, "rpx") || !strcasecmp(x, "wuhb") || !strcasecmp(x, "elf");
+#else
+    return !strcasecmp(x, "dol") || !strcasecmp(x, "elf");
+#endif
+}
+
+static bool is_boot(const char *name)
+{
+    const char *b = strrchr(name, '/');
+    b = b ? b + 1 : name;
+#ifdef __WIIU__
+    return !strcasecmp(b, "meta.xml") ? false : is_prog(b);
+#else
+    return !strcasecmp(b, "boot.dol") || !strcasecmp(b, "boot.elf");
+#endif
+}
+
+/* "a/b" is inside "a" (or anything is inside the root, ""). */
+static bool path_within(const char *p, const char *dir)
+{
+    size_t l = strlen(dir);
+    if (!l) return true;
+    return !strncasecmp(p, dir, l) && (p[l] == '/' || p[l] == '\0');
+}
+
+/* Apps-only placement, the way the Homebrew Channel takes a zip ("myapp/boot.dol" ->
+ * apps/myapp): find the folders that hold a program (boot.dol / boot.elf, else any .dol /
+ * .elf), whatever wrapper or "apps/" folders sit around them, and give each its own
+ * apps/<folder>. A program loose at the top goes into apps/<archive name>. Everything outside
+ * those folders is left out. False when there is no program in the archive. */
+static bool decide_apps(const ent_t *e, int n, const char *stem, layout_t *L)
+{
+    memset(L, 0, sizeof(*L));
+
+    for (int pass = 0; pass < 2 && !L->napps; pass++) {
+        for (int i = 0; i < n; i++) {
+            if (e[i].dir || !(pass ? is_prog(e[i].name) : is_boot(e[i].name))) continue;
+            char d[MAX_NAME];
+            snprintf(d, sizeof(d), "%s", e[i].name);
+            char *sl = strrchr(d, '/');
+            if (sl)
+                *sl = '\0';
+            else
+                d[0] = '\0';
+            bool have = false;
+            for (int k = 0; k < L->napps && !have; k++) have = !strcasecmp(L->apps[k].src, d);
+            if (have) continue;
+            struct app_dir *na = realloc(L->apps, (size_t)(L->napps + 1) * sizeof(*na));
+            if (!na) return false;
+            L->apps = na;
+            snprintf(L->apps[L->napps++].src, MAX_NAME, "%s", d);
+        }
+    }
+
+    if (!L->napps) return false;
+    /* a program folder inside another one belongs to that one */
+
+    for (int i = 0; i < L->napps; i++)
+        for (int k = 0; k < L->napps; k++)
+            if (i != k && strcasecmp(L->apps[i].src, L->apps[k].src) &&
+                path_within(L->apps[i].src, L->apps[k].src)) {
+                L->apps[i--] = L->apps[--L->napps];
+                break;
+            }
+
+    for (int i = 0; i < L->napps; i++) {
+        const char *src = L->apps[i].src, *b = strrchr(src, '/');
+        b = b ? b + 1 : src;
+        if (!b[0] || !strcasecmp(b, "apps")) b = stem;
+        snprintf(L->apps[i].dst, MAX_NAME, "%s%.120s", APPS_BASE, b);
+    }
+
+    return true;
 }
 
 /* Archive path -> path relative to the drive root, or false to skip it. */
 static bool map_name(const layout_t *L, const char *name, char *out, size_t n)
 {
+    if (L->napps) {
+        for (int i = 0; i < L->napps; i++) {
+            const char *src = L->apps[i].src;
+            if (!path_within(name, src)) continue;
+            const char *rest = name + strlen(src);
+            if (*rest == '/') rest++;
+            int w = *rest ? snprintf(out, n, "%s/%s", L->apps[i].dst, rest)
+                          : snprintf(out, n, "%s", L->apps[i].dst);
+            return w > 0 && (size_t)w < n;
+        }
+        return false;
+    }
     const char *p = name;
     for (int i = 0; i < L->strip; i++) {
         p = after_first(p);
@@ -198,9 +342,17 @@ static bool map_name(const layout_t *L, const char *name, char *out, size_t n)
 
 /* ---------------------------------------------------------------- stream */
 
-typedef struct { vfs_file f; u64 pos, size; } vstream;
+typedef struct {
+    vfs_file f;
+    u64 pos, size;
+} vstream;
 
-static void vs_close(void *d) { vstream *s = d; vfs_close(&s->f); free(s); }
+static void vs_close(void *d)
+{
+    vstream *s = d;
+    vfs_close(&s->f);
+    free(s);
+}
 static size_t vs_read(void *d, void *buf, size_t n)
 {
     vstream *s = d;
@@ -228,10 +380,16 @@ static ar_stream *open_stream(const char *path)
 {
     vstream *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
-    if (!vfs_open_read(&s->f, path)) { free(s); return NULL; }
+    if (!vfs_open_read(&s->f, path)) {
+        free(s);
+        return NULL;
+    }
     s->size = s->f.size;
     ar_stream *st = ar_open_stream(s, vs_close, vs_read, vs_seek, vs_tell);
-    if (!st) { vfs_close(&s->f); free(s); }
+    if (!st) {
+        vfs_close(&s->f);
+        free(s);
+    }
     return st;
 }
 
@@ -296,12 +454,16 @@ static void reader_close(reader_t *rd)
 }
 
 /* Next entry: 1 = got one, 0 = end, -1 = error. `name` is the raw archive path. */
-static int reader_next(reader_t *rd, char *name, size_t n, bool *dir, u64 *size, char *err, size_t errsz)
+static int reader_next(reader_t *rd, char *name, size_t n, bool *dir, u64 *size, char *err,
+                       size_t errsz)
 {
     if (rd->r5) {
         for (;;) {
             int r = rar5_next(rd->r5, &rd->e5);
-            if (r < 0) { set_err(err, errsz, rar5_error(rd->r5)); return -1; }
+            if (r < 0) {
+                set_err(err, errsz, rar5_error(rd->r5));
+                return -1;
+            }
             if (r == 0) return 0;
             if (rd->e5.skip && !rd->e5.dir) {          /* link: nothing to install */
                 rar5_extract(rd->r5, NULL, NULL);
@@ -313,12 +475,23 @@ static int reader_next(reader_t *rd, char *name, size_t n, bool *dir, u64 *size,
             return 1;
         }
     }
+
     if (rd->have_cur)
         rd->have_cur = false;
     else if (!ar_parse_entry(rd->ar))
-        return ar_at_eof(rd->ar) ? 0 : (set_err(err, errsz, "The archive is damaged or uses an unsupported method"), -1);
+        return ar_at_eof(rd->ar)
+                   ? 0
+                   : (set_err(err, errsz,
+                              "The archive is damaged or uses an unsupported method"),
+                      -1);
+
     const char *nm = ar_entry_get_name(rd->ar);
-    if (!nm) { name[0] = '\0'; *dir = false; *size = 0; return 1; }
+    if (!nm) {
+        name[0] = '\0';
+        *dir = false;
+        *size = 0;
+        return 1;
+    }
     snprintf(name, n, "%s", nm);
     size_t nl = strlen(name);
     *dir = nl && (name[nl - 1] == '/' || name[nl - 1] == '\\');
@@ -338,16 +511,25 @@ typedef struct {
     install_cb cb;
     const char *rel;
     u64 *done, total;
-    char *err; size_t errsz;
+    char *err;
+    size_t errsz;
     bool ok;
 } wsink_t;
 
 static bool wsink(void *ud, const u8 *p, size_t n)
 {
     wsink_t *w = ud;
-    if (vfs_write(&w->f, p, (u32)n) < 0) { set_err(w->err, w->errsz, g_write_err ? g_write_err : "Write error (drive full?)"); w->ok = false; return false; }
+    if (vfs_write(&w->f, p, (u32)n) < 0) {
+        set_err(w->err, w->errsz, g_write_err ? g_write_err : "Write error (drive full?)");
+        w->ok = false;
+        return false;
+    }
     *w->done += n;
-    if (w->cb && !w->cb(w->rel, *w->done, w->total)) { set_err(w->err, w->errsz, "Cancelled"); w->ok = false; return false; }
+    if (w->cb && !w->cb(w->rel, *w->done, w->total)) {
+        set_err(w->err, w->errsz, "Canceled");
+        w->ok = false;
+        return false;
+    }
     return true;
 }
 
@@ -355,7 +537,9 @@ static bool wsink(void *ud, const u8 *p, size_t n)
 static bool reader_extract(reader_t *rd, u64 size, wsink_t *w, char *buf, char *err, size_t errsz)
 {
     if (rd->r5) {
-        if (!w) return rar5_extract(rd->r5, NULL, NULL) || (set_err(err, errsz, rar5_error(rd->r5)), false);
+        if (!w)
+            return rar5_extract(rd->r5, NULL, NULL) ||
+                   (set_err(err, errsz, rar5_error(rd->r5)), false);
         if (rar5_extract(rd->r5, wsink, w)) return true;
         if (w->ok) set_err(err, errsz, rar5_error(rd->r5));
         return false;
@@ -364,7 +548,10 @@ static bool reader_extract(reader_t *rd, u64 size, wsink_t *w, char *buf, char *
     size_t left = (size_t)size;
     while (left) {
         size_t c = left > CHUNK ? CHUNK : left;
-        if (!ar_entry_uncompress(rd->ar, buf, c)) { set_err(err, errsz, "Couldn't unpack a file (damaged, encrypted or out of memory)"); return false; }
+        if (!ar_entry_uncompress(rd->ar, buf, c)) {
+            set_err(err, errsz, "Couldn't unpack a file (damaged, encrypted or out of memory)");
+            return false;
+        }
         if (!wsink(w, (u8 *)buf, c)) return false;
         left -= c;
     }
@@ -373,21 +560,40 @@ static bool reader_extract(reader_t *rd, u64 size, wsink_t *w, char *buf, char *
 
 /* ---------------------------------------------------------------- install */
 
-int install_archive(const char *arc_path, int dev, install_cb cb, char *err, size_t errsz)
+static void (*g_written)(const char *path, void *ctx);
+static void *g_written_ctx;
+
+void install_on_written(void (*fn)(const char *path, void *ctx), void *ctx)
+{
+    g_written = fn;
+    g_written_ctx = ctx;
+}
+
+static int install_any(const char *arc_path, int dev, bool apps_only, install_cb cb, char *err,
+                       size_t errsz)
 {
     if (err && errsz) err[0] = '\0';
-    if (dev < 0 || !g_devs[dev].mounted) { set_err(err, errsz, "No SD card / USB drive to install to"); return -1; }
+    if (dev < 0 || !g_devs[dev].mounted) {
+        set_err(err, errsz, "No SD card / USB drive to install to");
+        return -1;
+    }
 
     ar_stream *st = open_stream(arc_path);
-    if (!st) { set_err(err, errsz, "Can't open the archive"); return -1; }
+    if (!st) {
+        set_err(err, errsz, "Can't open the archive");
+        return -1;
+    }
     reader_t rd;
-    if (!reader_open(&rd, st, err, errsz)) { ar_close(st); return -1; }
+    if (!reader_open(&rd, st, err, errsz)) {
+        ar_close(st);
+        return -1;
+    }
 
     ent_t *ents = NULL;
     int n = 0, cap = 0;
     u64 total = 0, done_bytes = 0;
     int result = -1;
-    layout_t L;
+    layout_t L = { 0 };
     char stem[128], *buf = NULL, root[VFS_PATH_MAX], raw[MAX_NAME + 8];
     snprintf(root, sizeof(root), "%s", vfs_dev_root(dev));
 
@@ -398,25 +604,44 @@ int install_archive(const char *arc_path, int dev, install_cb cb, char *err, siz
         int r = reader_next(&rd, raw, sizeof(raw), &dir, &size, err, errsz);
         if (r < 0) goto done;
         if (!r) break;
-        if (strlen(raw) >= MAX_NAME) { set_err(err, errsz, "A file name in the archive is too long"); goto done; }
+
+        if (strlen(raw) >= MAX_NAME) {
+            set_err(err, errsz, "A file name in the archive is too long");
+            goto done;
+        }
         if (!clean_path(raw) || is_junk(raw)) continue;
+
         if (n == cap) {
             cap = cap ? cap * 2 : 64;
             ent_t *ne = realloc(ents, (size_t)cap * sizeof(*ents));
-            if (!ne) { set_err(err, errsz, "Out of memory"); goto done; }
+            if (!ne) {
+                set_err(err, errsz, "Out of memory");
+                goto done;
+            }
             ents = ne;
         }
+
         ents[n].name = strdup(raw);
         ents[n].dir = dir;
         ents[n].size = size;
-        if (!ents[n].name) { set_err(err, errsz, "Out of memory"); goto done; }
+        if (!ents[n].name) {
+            set_err(err, errsz, "Out of memory");
+            goto done;
+        }
+
         total += size;
         n++;
     }
-    if (!n) { set_err(err, errsz, "The archive is empty"); goto done; }
+    if (!n) {
+        set_err(err, errsz, "The archive is empty");
+        goto done;
+    }
 
     archive_stem(arc_path, stem, sizeof(stem));
-    decide_layout(ents, n, stem, &L);
+    if (!apps_only || !decide_apps(ents, n, stem, &L)) {
+        free(L.apps);
+        decide_layout(ents, n, stem, &L);
+    }
 
     vfs_update_space(dev);
     if (g_devs[dev].space_known && total + (1u << 20) > g_devs[dev].free) {
@@ -424,10 +649,16 @@ int install_archive(const char *arc_path, int dev, install_cb cb, char *err, siz
         goto done;
     }
     buf = memalign(32, CHUNK);
-    if (!buf) { set_err(err, errsz, "Out of memory"); goto done; }
+    if (!buf) {
+        set_err(err, errsz, "Out of memory");
+        goto done;
+    }
 
     /* pass 2: unpack */
-    if (!reader_rewind(&rd)) { set_err(err, errsz, "Couldn't re-read the archive"); goto done; }
+    if (!reader_rewind(&rd)) {
+        set_err(err, errsz, "Couldn't re-read the archive");
+        goto done;
+    }
     int written = 0;
     char made[VFS_PATH_MAX] = "";
     for (;;) {
@@ -436,42 +667,75 @@ int install_archive(const char *arc_path, int dev, install_cb cb, char *err, siz
         int r = reader_next(&rd, raw, sizeof(raw), &dir, &size, err, errsz);
         if (r < 0) goto done;
         if (!r) break;
+
         char rel[MAX_NAME];
         char dest[VFS_PATH_MAX];
-        bool want = strlen(raw) < MAX_NAME && clean_path(raw) && !is_junk(raw) && map_name(&L, raw, rel, sizeof(rel)) &&
-                    vfs_join(dest, sizeof(dest), root, rel);
+        bool want = strlen(raw) < MAX_NAME && clean_path(raw) && !is_junk(raw) &&
+                    map_name(&L, raw, rel, sizeof(rel)) && vfs_join(dest, sizeof(dest), root, rel);
         if (!want || dir) {
-            if (want && dir && !mkdirs(dest)) { set_err(err, errsz, "Can't create a folder on the drive"); goto done; }
+            if (want && dir && !mkdirs(dest)) {
+                set_err(err, errsz, "Can't create a folder on the drive");
+                goto done;
+            }
             if (!dir && !reader_extract(&rd, size, NULL, buf, err, errsz)) goto done;
             continue;
         }
+
         char parent[VFS_PATH_MAX];
         if (!vfs_parent(dest, parent, sizeof(parent))) continue;
         if (strcmp(parent, made)) {
-            if (!mkdirs(parent)) { set_err(err, errsz, "Can't create a folder on the drive"); goto done; }
+            if (!mkdirs(parent)) {
+                set_err(err, errsz, "Can't create a folder on the drive");
+                goto done;
+            }
             snprintf(made, sizeof(made), "%s", parent);
         }
-        bool is_dir;
-        if (vfs_stat(dest, &is_dir, NULL) && is_dir) { set_err(err, errsz, "A folder is in the way of a file"); goto done; }
 
-        wsink_t w = { .cb = cb, .rel = rel, .done = &done_bytes, .total = total, .err = err, .errsz = errsz, .ok = true };
-        if (!vfs_open_write(&w.f, dest)) { set_err(err, errsz, "Can't create a file on the drive"); goto done; }
-        bool ok = (!cb || cb(rel, done_bytes, total)) ? reader_extract(&rd, size, &w, buf, err, errsz) : false;
-        if (!vfs_close_checked(&w.f) && ok) { set_err(err, errsz, "Write error (drive full?)"); ok = false; }
+        bool is_dir;
+        if (vfs_stat(dest, &is_dir, NULL) && is_dir) {
+            set_err(err, errsz, "A folder is in the way of a file");
+            goto done;
+        }
+
+        wsink_t w = { .cb = cb, .rel = rel, .done = &done_bytes, .total = total, .err = err,
+                      .errsz = errsz, .ok = true };
+        if (!vfs_open_write(&w.f, dest)) {
+            set_err(err, errsz, "Can't create a file on the drive");
+            goto done;
+        }
+        bool ok = (!cb || cb(rel, done_bytes, total))
+                      ? reader_extract(&rd, size, &w, buf, err, errsz)
+                      : false;
+        if (!vfs_close_checked(&w.f) && ok) {
+            set_err(err, errsz, "Write error (drive full?)");
+            ok = false;
+        }
         if (!ok) {
             vfs_remove(dest, false);
-            if (err && errsz && !err[0]) set_err(err, errsz, "Cancelled");
+            if (err && errsz && !err[0]) set_err(err, errsz, "Canceled");
             goto done;
         }
         written++;
+        if (g_written) g_written(dest, g_written_ctx);
     }
     result = written;
 
 done:
+    free(L.apps);
     for (int i = 0; i < n; i++) free(ents[i].name);
     free(ents);
     free(buf);
     reader_close(&rd);
     ar_close(st);
     return result;
+}
+
+int install_archive(const char *arc_path, int dev, install_cb cb, char *err, size_t errsz)
+{
+    return install_any(arc_path, dev, false, cb, err, errsz);
+}
+
+int install_archive_apps(const char *arc_path, int dev, install_cb cb, char *err, size_t errsz)
+{
+    return install_any(arc_path, dev, true, cb, err, errsz);
 }

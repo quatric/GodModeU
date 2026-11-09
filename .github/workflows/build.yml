@@ -20,13 +20,16 @@ jobs:
     container: devkitpro/devkitppc:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       # pkg.devkitpro.org sits behind Cloudflare and sometimes answers 403 to
       # CI runners, so retry it and fall back to building wut from source.
       - name: Install wut
         run: |
           for i in 1 2 3; do
-            if dkp-pacman -Sy --noconfirm wut wut-tools; then exit 0; fi
+            if dkp-pacman -Sy --noconfirm --needed wut wut-tools ppc-libpng ppc-libjpeg-turbo ppc-libwebp \
+                 ppc-libvorbisidec ppc-libogg ppc-bzip2 ppc-zlib; then exit 0; fi
             sleep $((i * 10))
           done
           echo "pkg.devkitpro.org unavailable, building wut from source"

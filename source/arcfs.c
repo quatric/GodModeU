@@ -1,7 +1,7 @@
 /*
  * Glue between the archive readers and the VFS: opens the container file through
- * the VFS (so archives work on SD, USB, MLC, NAND and inside other archives),
- * keeps a few parsed archives around while browsing them.
+ * the VFS (so archives work on SD, USB, NAND, the disc, ... and inside other
+ * archives), keeps a few parsed archives around while browsing them.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +11,8 @@
 
 #include "arcfs.h"
 #include "archive.h"
-#include "aes.h"
+#include "otp.h"
+#include "ui.h"
 
 #define KEY_MAX 512
 #define CACHE_N 4
@@ -26,6 +27,8 @@ struct entry {
 };
 
 static entry cache[CACHE_N];
+/* USB drives read through the WFS reader, one archive per drive */
+static entry pins[USB_SLOTS];
 static u32 clock_tick;
 static bool provider_set;
 
@@ -51,7 +54,10 @@ static int32_t filesrc_read(void *ctx, uint64_t off, void *buf, uint32_t len)
         uint32_t n = len - done;
         if (n > BOUNCE) n = BOUNCE;
         s32 r = vfs_read(&s->f, s->bounce, n);
-        if (r < 0) { s->pos = (u64)-1; return done ? (int32_t)done : -1; }
+        if (r < 0) {
+            s->pos = (u64)-1;
+            return done ? (int32_t)done : -1;
+        }
         if (r == 0) break;
         memcpy(dst + done, s->bounce, r);
         done += (uint32_t)r;
@@ -108,13 +114,12 @@ static void nestsrc_close(void *ctx)
     free(s);
 }
 
-/* ---------------------------------------------------------------- cache */
-
 /* ---------------------------------------------------------------- WFS keys */
 
 /* Keys for Wii U volumes come from files on the SD card:
  *   sd:/wfs/usb.key, mlc.key   the 16 byte AES keys themselves
- *   sd:/wfs/otp.bin (+ seeprom.bin)  a Wii U's OTP / SEEPROM dump; the USB key is derived from both, the MLC key from the OTP
+ *   sd:/wfs/otp.bin (+ seeprom.bin)  a Wii U's OTP / SEEPROM dump; the USB key is derived from
+ *                                    both, the MLC key from the OTP
  * (the same files are looked for in the root of the card). */
 #define WFS_KEYS_MAX 8
 static uint8_t wfs_keys[WFS_KEYS_MAX][16];
@@ -127,7 +132,10 @@ static int read_small(const char *path, uint8_t *out, uint32_t max)
     if (!vfs_open_read(&f, path))
         return -1;
     uint8_t *b = memalign(32, (max + 31) & ~31u);
-    if (!b) { vfs_close(&f); return -1; }
+    if (!b) {
+        vfs_close(&f);
+        return -1;
+    }
     uint32_t got = 0;
     while (got < max) {
         s32 r = vfs_read(&f, b + got, max - got);
@@ -173,7 +181,8 @@ static void load_wfs_keys(void)
             int sn = read_small(path, seeprom, sizeof(seeprom));
             if (sn >= 0xC0) {
                 uint8_t usb[16];
-                aes128_ecb_encrypt(otp + 0x130, seeprom + 0xB0, usb);      /* USB: seed encrypted with the OTP key */
+                /* USB: seed encrypted with the OTP key */
+                aes128_ecb_encrypt(otp + 0x130, seeprom + 0xB0, usb);
                 add_key(usb);
                 memset(usb, 0, sizeof(usb));
             }
@@ -193,13 +202,53 @@ static bool wfs_key_provider(int index, uint8_t key[16])
     return true;
 }
 
+static bool prng_provider(uint32_t console_id, uint8_t key[16]);
+static bool nand_provider(uint8_t key[16]);
+
+static bool open_src(const char *spec, size_t n, src_t *out, char *name, size_t namesz);
+static const char *opening;         /* the archive file being opened, for sibling_provider */
+
+static bool sibling_provider(const char *name, src_t *out)
+{
+    if (!opening || strchr(name, '/') || strchr(name, '|')) return false;
+    char path[VFS_PATH_MAX + 64], nm[VFS_NAME_MAX];
+    const char *slash = strrchr(opening, '/');
+    if (!slash) return false;
+    snprintf(path, sizeof(path), "%.*s/%s", (int)(slash - opening), opening, name);
+    const char *saved = opening;
+    opening = NULL;                 /* no nesting */
+    bool ok = open_src(path, strlen(path), out, nm, sizeof(nm));
+    opening = saved;
+    return ok;
+}
+
 static void init_providers(void)
 {
     if (provider_set)
         return;
+    archive_set_prng_key_provider(prng_provider);
+    archive_set_nand_key_provider(nand_provider);
     archive_set_wfs_key_provider(wfs_key_provider);
+    archive_set_sibling_provider(sibling_provider);
     provider_set = true;
 }
+
+/* ---------------------------------------------------------------- raw USB source */
+
+typedef struct {
+    int slot;
+} rawsrc;
+
+static int32_t rawsrc_read(void *ctx, uint64_t off, void *buf, uint32_t len)
+{
+    rawsrc *r = ctx;
+    uint64_t size = vfs_usb_raw_size(r->slot);
+    if (off >= size) return 0;
+    if (len > size - off) len = (uint32_t)(size - off);
+    return vfs_usb_raw_read(r->slot, off, buf, len) ? (int32_t)len : -1;
+}
+
+static void rawsrc_close(void *ctx) { free(ctx); }
 
 static void entry_free(entry *e)
 {
@@ -210,10 +259,75 @@ static void entry_free(entry *e)
 void arcfs_flush(void)
 {
     wfs_keys_loaded = false;
-    for (int pass = 0; pass < CACHE_N; pass++)          /* freeing a nested archive releases its parent */
+    /* freeing a nested archive releases its parent */
+    for (int pass = 0; pass < CACHE_N; pass++)
         for (int i = 0; i < CACHE_N; i++)
             if (cache[i].a && cache[i].refs == 0)
                 entry_free(&cache[i]);
+}
+
+/* The OTP inside a BootMii key dump: keys.bin (0x400 bytes, OTP at 0x100), a bare otp.bin, or the keys
+ * section at the end of a nand.bin. */
+static bool otp_from_file(const char *path, u8 otp[OTP_SIZE])
+{
+    vfs_file f;
+    if (!vfs_open_read(&f, path)) return false;
+    u64 at;
+    if (f.size == 0x400) at = 0x100;
+    else if (f.size == OTP_SIZE) at = 0;
+    else if (f.size == 0x21000400ull || f.size == 0x20000400ull) at = f.size - 0x400 + 0x100;
+    else { vfs_close(&f); return false; }
+    u8 *buf = memalign(32, OTP_SIZE);
+    bool ok = buf && vfs_seek(&f, at) && vfs_read(&f, buf, OTP_SIZE) == OTP_SIZE;
+    if (ok) memcpy(otp, buf, OTP_SIZE);
+    if (buf) { memset(buf, 0, OTP_SIZE); free(buf); }
+    vfs_close(&f);
+    return ok;
+}
+
+/* This console's PRNG key when it is the one that made the file (or console_id is 0); otherwise the key of
+ * that console out of its BootMii keys.bin / otp.bin / nand.bin, next to the file being opened, at the root of
+ * its drive or of the SD card (where YABDM looks for them too). */
+static bool prng_provider(uint32_t console_id, uint8_t key[16])
+{
+    u8 *otp = memalign(32, OTP_SIZE);
+    if (!otp) return false;
+    bool ok = otp_read_all(otp) && (!console_id || be32(((otp_t *)otp)->ng_id) == console_id);
+    if (ok) memcpy(key, ((otp_t *)otp)->rng_key, 16);
+    static const char *const names[] = { "keys.bin", "otp.bin", "nand.bin" };
+    char dirs[3][VFS_PATH_MAX];
+    int nd = 0;
+    const char *slash = opening ? strrchr(opening, '/') : NULL;
+    if (slash && !strchr(opening, '|')) {
+        snprintf(dirs[nd++], VFS_PATH_MAX, "%.*s", (int)(slash - opening), opening);
+        int dev = vfs_dev_of(opening);
+        if (dev >= 0) snprintf(dirs[nd++], VFS_PATH_MAX, "%.*s", (int)strlen(vfs_dev_root(dev)) - 1, vfs_dev_root(dev));
+    }
+    snprintf(dirs[nd++], VFS_PATH_MAX, "sd:");
+    for (int d = 0; !ok && d < nd; d++) {
+        if (d && !strcmp(dirs[d], dirs[d - 1])) continue;
+        for (int i = 0; !ok && i < 3; i++) {
+            char p[VFS_PATH_MAX + 16];
+            snprintf(p, sizeof(p), "%s/%s", dirs[d], names[i]);
+            ok = otp_from_file(p, otp) && (!console_id || be32(((otp_t *)otp)->ng_id) == console_id);
+            if (ok) memcpy(key, ((otp_t *)otp)->rng_key, 16);
+        }
+    }
+    memset(otp, 0, OTP_SIZE);
+    free(otp);
+    return ok;
+}
+
+/* the NAND key of the console this runs on, for nand.bin dumps without keys of their own */
+static bool nand_provider(uint8_t key[16])
+{
+    u8 *otp = memalign(32, OTP_SIZE);
+    if (!otp) return false;
+    bool ok = otp_read_all(otp);
+    if (ok) memcpy(key, ((otp_t *)otp)->nand_key, 16);
+    memset(otp, 0, OTP_SIZE);
+    free(otp);
+    return ok;
 }
 
 static entry *cache_lookup(const char *key)
@@ -246,6 +360,7 @@ static bool open_src(const char *spec, size_t n, src_t *out, char *name, size_t 
     if (n >= sizeof(buf)) return false;
     memcpy(buf, spec, n);
     buf[n] = '\0';
+
     const char *bar = NULL;
     for (const char *p = buf; *p; p++)
         if (*p == '|') bar = p;
@@ -253,12 +368,14 @@ static bool open_src(const char *spec, size_t n, src_t *out, char *name, size_t 
         snprintf(name, namesz, "%s", vfs_basename(buf));
         return filesrc_make(out, buf);
     }
+
     entry *parent = get_archive(spec, (size_t)(bar - buf));
     if (!parent) return false;
     const char *inner = bar + 1;
     while (*inner == '/') inner++;
     int node = archive_find(parent->a, inner);
     if (node < 0 || parent->a->tree.n[node].is_dir) return false;
+
     nestsrc *s = calloc(1, sizeof(*s));
     if (!s) return false;
     s->parent = parent;
@@ -268,6 +385,7 @@ static bool open_src(const char *spec, size_t n, src_t *out, char *name, size_t 
     out->close = nestsrc_close;
     out->ctx = s;
     out->size = parent->a->tree.n[node].size;
+
     const char *base = strrchr(inner, '/');
     snprintf(name, namesz, "%s", base ? base + 1 : inner);
     return true;
@@ -276,7 +394,10 @@ static bool open_src(const char *spec, size_t n, src_t *out, char *name, size_t 
 static entry *get_archive(const char *spec, size_t n)
 {
     char key[KEY_MAX];
-    if (n >= sizeof(key)) { g_archive_err = "Path is too long"; return NULL; }
+    if (n >= sizeof(key)) {
+        g_archive_err = "Path is too long";
+        return NULL;
+    }
     memcpy(key, spec, n);
     key[n] = '\0';
     entry *e = cache_lookup(key);
@@ -290,14 +411,27 @@ static entry *get_archive(const char *spec, size_t n)
         if (!g_archive_err) g_archive_err = "Can't read that file";
         return NULL;
     }
+
+    opening = key;
+    busy_hook = ui_busy_tick;
+    ui_busy_begin(name);
     archive_t *a = archive_open(&src, name);
+    ui_busy_end();
+    opening = NULL;
+
     if (!a) {
         if (src.close) src.close(src.ctx);
         if (!g_archive_err) g_archive_err = "Not a supported archive";
         return NULL;
     }
+
     e = cache_slot();
-    if (!e) { archive_close(a); g_archive_err = "Too many archives open"; return NULL; }
+    if (!e) {
+        archive_close(a);
+        g_archive_err = "Too many archives open";
+        return NULL;
+    }
+
     snprintf(e->key, sizeof(e->key), "%s", key);
     e->a = a;
     e->refs = 0;
@@ -311,8 +445,23 @@ static bool resolve(const char *path, entry **e, int *node)
     const char *bar = NULL;
     for (const char *p = path; *p; p++)
         if (*p == '|') bar = p;
-    if (!bar)
-        return false;
+    if (!bar) {                                     /* a path on a WFS volume: "usb1:/usr/title" */
+        int dev = vfs_dev_of(path);
+        if (!arcfs_dev_pinned(dev)) return false;
+        *e = &pins[dev - DEV_USB0];
+        const char *rest = path + strlen(g_devs[dev].prefix);
+        char rel[KEY_MAX];
+        snprintf(rel, sizeof(rel), "%s", rest);
+        size_t l = strlen(rel);
+        while (l && rel[l - 1] == '/') rel[--l] = '\0';
+        *node = archive_find((*e)->a, rel);
+        if (*node < 0) {
+            g_archive_err = "Not found on the volume";
+            return false;
+        }
+        return true;
+    }
+
     *e = get_archive(path, (size_t)(bar - path));
     if (!*e) return false;
     const char *inner = bar + 1;
@@ -321,18 +470,82 @@ static bool resolve(const char *path, entry **e, int *node)
     snprintf(rel, sizeof(rel), "%s", inner);
     size_t l = strlen(rel);
     while (l && rel[l - 1] == '/') rel[--l] = '\0';
+
     *node = archive_find((*e)->a, rel);
-    if (*node < 0) { g_archive_err = "Not found in the archive"; return false; }
+    if (*node < 0) {
+        g_archive_err = "Not found in the archive";
+        return false;
+    }
     return true;
 }
 
 /* ---------------------------------------------------------------- public */
 
-bool arcfs_is_path(const char *path)
+bool arcfs_dev_pinned(int dev)
 {
-    return strchr(path, '|') != NULL;
+    return dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS && pins[dev - DEV_USB0].a != NULL;
 }
 
+bool arcfs_is_path(const char *path)
+{
+    return strchr(path, '|') != NULL || arcfs_dev_pinned(vfs_dev_of(path));
+}
+
+/* A raw USB drive that libfat can't mount: a Wii U WFS volume, or a disk with a partition table / a file system
+ * we read (ext2/3/4, XFS, HFS+, APFS, ZFS), shown read-only through the archive readers. */
+bool arcfs_mount_wfs(int dev, int usb_slot)
+{
+    if (dev < DEV_USB0 || dev >= DEV_USB0 + USB_SLOTS || pins[dev - DEV_USB0].a)
+        return false;
+    init_providers();
+    load_wfs_keys();
+    if (vfs_usb_raw_size(usb_slot) == 0)
+        return false;
+    rawsrc *r = calloc(1, sizeof(*r));
+    if (!r) return false;
+    r->slot = usb_slot;
+    src_t src = { rawsrc_read, rawsrc_close, r, vfs_usb_raw_size(usb_slot) };
+    g_archive_err = NULL;
+    archive_t *a = NULL;
+    if (arc_wfs_probe(&src, ""))
+        a = arc_wfs_open(&src, "");
+    else if (arc_disk_probe(&src, ""))
+        a = arc_disk_open(&src, "");
+    else if (arc_ext_probe(&src, ""))
+        a = arc_ext_open(&src, "");
+    else if (arc_hfs_probe(&src, ""))
+        a = arc_hfs_open(&src, "");
+    else if (arc_xfs_probe(&src, ""))
+        a = arc_xfs_open(&src, "");
+    else if (arc_apfs_probe(&src, ""))
+        a = arc_apfs_open(&src, "");
+    else if (arc_zfs_probe(&src, ""))
+        a = arc_zfs_open(&src, "");
+    if (!a) {
+        rawsrc_close(r);
+        return false;
+    }
+    entry *e = &pins[dev - DEV_USB0];
+    snprintf(e->key, sizeof(e->key), "%s", g_devs[dev].prefix);
+    e->a = a;
+    e->refs = 0;
+    return true;
+}
+
+const char *arcfs_pin_kind(int dev)
+{
+    return arcfs_dev_pinned(dev) ? pins[dev - DEV_USB0].a->kind : "";
+}
+
+void arcfs_unpin_all(void)
+{
+    arcfs_flush();
+    for (int i = 0; i < USB_SLOTS; i++)
+        entry_free(&pins[i]);
+    memset(wfs_keys, 0, sizeof(wfs_keys));
+    wfs_key_count = 0;
+    wfs_keys_loaded = false;
+}
 
 bool arcfs_container(const char *path, char *out, size_t outsz)
 {

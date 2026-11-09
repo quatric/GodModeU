@@ -1,140 +1,83 @@
 /*
- * Input for the Wii U: the GamePad (VPAD) and any Wii Remote or Classic
- * Controller or Wii U Pro Controller paired with the console (KPAD). Both are folded into BTN_* bits.
- * The Classic Controller mapping follows GlowWii's (see README).
+ * Input for the Wii U through libwiiuinput (github.com/quatric/libwiiuinput), the Wii U port of the
+ * libwiiinput that GodModeWii uses: the GamePad, Wii Remotes (with a Nunchuk or Classic Controller),
+ * Wii U Pro Controllers, the GameCube controller adapter, USB game controllers, USB keyboards and
+ * mice all arrive as WPAD_BUTTON_* bits:
+ *   D-Pad          arrows           A  open / confirm      B  back / cancel
+ *   X (2)          actions menu     Y (1)  mark and move down
+ *   + / R / ZR     copy             - / L / ZL  cut        HOME  system menu
+ * The GamePad's touch screen and the Wii Remote pointer drive the cursor (pointer.c).
  */
-#include <coreinit/thread.h>
 #include <coreinit/time.h>
-#include <padscore/kpad.h>
-#include <padscore/wpad.h>
-#include <vpad/input.h>
+#include <coreinit/thread.h>
 #include <whb/proc.h>
+#include <input_wiiu.h>
 
 #include "input.h"
+#include "pointer.h"
 #include "ui.h"
+#include "sfx.h"
+#include "alarm.h"
 #include "app.h"
-
-#define DPAD (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT)
-#define WIIMOTE_BUTTONS (BTN_LEFT | BTN_RIGHT | BTN_DOWN | BTN_UP | BTN_PLUS | BTN_2 | BTN_1 | \
-                         BTN_B | BTN_A | BTN_MINUS | BTN_HOME)
-
-static bool vpad_ready;
-static bool kpad_ready;
-
-static u32 map_vpad(u32 b)
-{
-    u32 out = 0;
-    if (b & VPAD_BUTTON_UP)    out |= BTN_UP;
-    if (b & VPAD_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & VPAD_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & VPAD_BUTTON_RIGHT) out |= BTN_RIGHT;
-    if (b & VPAD_BUTTON_A)     out |= BTN_A;
-    if (b & VPAD_BUTTON_B)     out |= BTN_B;
-    if (b & VPAD_BUTTON_X)     out |= BTN_2;
-    if (b & VPAD_BUTTON_Y)     out |= BTN_1;
-    if (b & (VPAD_BUTTON_PLUS | VPAD_BUTTON_R | VPAD_BUTTON_ZR))     out |= BTN_PLUS;
-    if (b & (VPAD_BUTTON_MINUS | VPAD_BUTTON_L | VPAD_BUTTON_ZL))    out |= BTN_MINUS;
-    if (b & VPAD_BUTTON_HOME)  out |= BTN_HOME;
-    return out;
-}
-
-static u32 map_classic(u32 b)
-{
-    u32 out = 0;
-    if (b & WPAD_CLASSIC_BUTTON_UP)    out |= BTN_UP;
-    if (b & WPAD_CLASSIC_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & WPAD_CLASSIC_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & WPAD_CLASSIC_BUTTON_RIGHT) out |= BTN_RIGHT;
-    if (b & WPAD_CLASSIC_BUTTON_A)     out |= BTN_A;
-    if (b & WPAD_CLASSIC_BUTTON_B)     out |= BTN_B;
-    if (b & WPAD_CLASSIC_BUTTON_X)     out |= BTN_2;
-    if (b & WPAD_CLASSIC_BUTTON_Y)     out |= BTN_1;
-    if (b & (WPAD_CLASSIC_BUTTON_PLUS | WPAD_CLASSIC_BUTTON_R | WPAD_CLASSIC_BUTTON_ZR))  out |= BTN_PLUS;
-    if (b & (WPAD_CLASSIC_BUTTON_MINUS | WPAD_CLASSIC_BUTTON_L | WPAD_CLASSIC_BUTTON_ZL)) out |= BTN_MINUS;
-    if (b & WPAD_CLASSIC_BUTTON_HOME)  out |= BTN_HOME;
-    return out;
-}
-
-static u32 map_pro(u32 b)
-{
-    u32 out = 0;
-    if (b & WPAD_PRO_BUTTON_UP)    out |= BTN_UP;
-    if (b & WPAD_PRO_BUTTON_DOWN)  out |= BTN_DOWN;
-    if (b & WPAD_PRO_BUTTON_LEFT)  out |= BTN_LEFT;
-    if (b & WPAD_PRO_BUTTON_RIGHT) out |= BTN_RIGHT;
-    if (b & WPAD_PRO_BUTTON_A)     out |= BTN_A;
-    if (b & WPAD_PRO_BUTTON_B)     out |= BTN_B;
-    if (b & WPAD_PRO_BUTTON_X)     out |= BTN_2;
-    if (b & WPAD_PRO_BUTTON_Y)     out |= BTN_1;
-    if (b & (WPAD_PRO_BUTTON_PLUS | WPAD_PRO_BUTTON_R | WPAD_PRO_BUTTON_ZR))  out |= BTN_PLUS;
-    if (b & (WPAD_PRO_BUTTON_MINUS | WPAD_PRO_BUTTON_L | WPAD_PRO_BUTTON_ZL)) out |= BTN_MINUS;
-    if (b & WPAD_PRO_BUTTON_HOME)  out |= BTN_HOME;
-    return out;
-}
-
-/* Every connected controller, edge (down) or level (held). */
-static u32 read_pads(bool down)
-{
-    u32 out = 0;
-    if (vpad_ready) {
-        VPADStatus st;
-        VPADReadError err = VPAD_READ_SUCCESS;
-        VPADRead(VPAD_CHAN_0, &st, 1, &err);
-        if (err == VPAD_READ_SUCCESS)
-            out |= map_vpad(down ? st.trigger : st.hold);
-    }
-    if (kpad_ready) {
-        for (int chan = WPAD_CHAN_0; chan <= WPAD_CHAN_3; chan++) {
-            KPADStatus ks;
-            if (KPADRead(chan, &ks, 1) != KPAD_ERROR_OK)
-                continue;
-            if (ks.extensionType == WPAD_EXT_PRO_CONTROLLER) {
-                /* the Pro Controller reports through its own bits, not the Wii Remote's */
-                out |= map_pro(down ? ks.pro.trigger : ks.pro.hold);
-                continue;
-            }
-            out |= (down ? ks.trigger : ks.hold) & WIIMOTE_BUTTONS;
-            if (ks.extensionType == WPAD_EXT_CLASSIC)
-                out |= map_classic(down ? ks.classic.trigger : ks.classic.hold);
-        }
-    }
-    return out;
-}
 
 void input_init(void)
 {
-    VPADInit();
-    vpad_ready = true;
-    KPADInit();
-    kpad_ready = true;
+    /* the pointer, touch screen and mouse drive the viewers' cursor */
+    INPUT_InitEx(0);
+    ptr_begin();
+    /* a tap on the GamePad is A where the finger is: it picks a row, presses a button, draws */
+    INPUT_SetTouchButton(WPAD_BUTTON_A);
+
+    INPUT_KeyboardMapSet(0x4C, 0);                  /* Delete: unused here */
+    INPUT_KeyboardMapSet(0x06, WPAD_BUTTON_PLUS);   /* C: copy */
+    INPUT_KeyboardMapSet(0x19, WPAD_BUTTON_MINUS);  /* V: cut  */
 }
 
 void input_shutdown(void)
 {
-    vpad_ready = false;
-    kpad_ready = false;
+    INPUT_Shutdown();
 }
 
-/* Shows what was drawn, waits a frame, and reads the controllers. */
-static u32 detect(bool down, bool wait)
+static u32 detect(u8 DownOrHeld, bool wait)
 {
-    ui_present();
+    ptr_overlay_update();                           /* an arrow taken away by a redraw is back before the next frame */
     if (wait)
-        OSSleepTicks(OSMillisecondsToTicks(16));
+        VIDEO_WaitVSync();
     if (!WHBProcIsRunning())
         g_quit_request = true;
-    return read_pads(down);
+
+    INPUT_Update();
+    ui_hint_update();
+    ptr_overlay_update();
+    alarm_poll();
+    if (DownOrHeld != IN_DOWN)
+        return INPUT_ButtonsHeld();
+    u32 down = INPUT_ButtonsDown();
+    /* a click on a footer hint ("B Stop") is that button */
+    u32 hint = ui_hint_under();
+    if (hint && ((down & WPAD_BUTTON_A) || (INPUT_MouseButtonsPressed() & INPUT_MOUSE_LEFT)))
+        down = (down & ~WPAD_BUTTON_A) | hint;
+    return down;
 }
 
-u32 DetectInput(u8 down_or_held)
+u32 DetectInput(u8 DownOrHeld)
 {
-    return detect(down_or_held == IN_DOWN, true);
+    return detect(DownOrHeld, true);
 }
 
 u32 input_poll_nowait(void)
 {
-    return detect(true, false);
+    return detect(IN_DOWN, false);
 }
+
+/* For the start-up code reader: no cursor, hint or alarm work. */
+u32 input_poll_raw(void)
+{
+    INPUT_Update();
+    return INPUT_ButtonsDown();
+}
+
+#define DPAD (WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT)
 
 u32 input_pressed(void)
 {
@@ -142,9 +85,11 @@ u32 input_pressed(void)
     static int hold_frames;
 
     u32 down = DetectInput(IN_DOWN);
-    u32 held = read_pads(false) & DPAD;
+    u32 held = INPUT_ButtonsHeld() & DPAD;
+    if (down & WPAD_BUTTON_A) sfx_play(SFX_CLICK);
+    else if (down & WPAD_BUTTON_B) sfx_play(SFX_LONGTAP);
+    else if (down & (WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT)) sfx_play(SFX_MOVEPAGE);
 
-    /* DetectInput waits a frame; the held state is read right after it. */
     if (!held || (down & DPAD)) {
         hold_frames = 0;
         repeat_mask = held;
@@ -159,5 +104,14 @@ u32 input_pressed(void)
 
 bool input_cancel_held(void)
 {
-    return (read_pads(false) & BTN_B) != 0;
+    INPUT_Update();
+    if (!WHBProcIsRunning())
+        g_quit_request = true;
+    return (INPUT_ButtonsHeld() & WPAD_BUTTON_B) != 0;
+}
+
+void input_flush(void)
+{
+    for (int i = 0; i < 3; i++)
+        detect(IN_DOWN, true);
 }

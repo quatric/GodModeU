@@ -11,20 +11,32 @@
 
 #include "vfs.h"
 #include "arcfs.h"
+#include "ui.h"
 
 vfs_dev g_devs[DEV_COUNT] = {
-    { "sd:",   "sd:/",   "SD Card",          "SD",   true,  false, false, 0, 0 },
-    { "usb1:", "usb1:/", "USB Drive 1",      "USB1", false, false, false, 0, 0 },
-    { "usb2:", "usb2:/", "USB Drive 2",      "USB2", false, false, false, 0, 0 },
-    { "usb3:", "usb3:/", "USB Drive 3",      "USB3", false, false, false, 0, 0 },
-    { "usb4:", "usb4:/", "USB Drive 4",      "USB4", false, false, false, 0, 0 },
-    { "usb5:", "usb5:/", "USB Drive 5",      "USB5", false, false, false, 0, 0 },
-    { "usb6:", "usb6:/", "USB Drive 6",      "USB6", false, false, false, 0, 0 },
-    { "usb7:", "usb7:/", "USB Drive 7",      "USB7", false, false, false, 0, 0 },
-    { "usb8:", "usb8:/", "USB Drive 8",      "USB8", false, false, false, 0, 0 },
-    { "mlc:",  "mlc:/",  "Wii U Storage (MLC)", "MLC",  true,  false, false, 0, 0 },
-    { "nand:", "nand:/", "vWii NAND (SLC)",  "NAND", true,  false, false, 0, 0 },
+    [DEV_SD]   = { "sd:",   "sd:/",   "SD Card",                 "SD",   true },
+    [DEV_USB0] = { "usb1:", "usb1:/", "USB Drive 1 (Wii U)",     "USB1", false },
+    [DEV_USB1] = { "usb2:", "usb2:/", "USB Drive 2 (Wii U)",     "USB2", false },
+    [DEV_USB2] = { "usb3:", "usb3:/", "USB Drive 3",             "USB3", false },
+    [DEV_USB3] = { "usb4:", "usb4:/", "USB Drive 4",             "USB4", false },
+    [DEV_USB4] = { "usb5:", "usb5:/", "USB Drive 5",             "USB5", false },
+    [DEV_USB5] = { "usb6:", "usb6:/", "USB Drive 6",             "USB6", false },
+    [DEV_USB6] = { "usb7:", "usb7:/", "USB Drive 7",             "USB7", false },
+    [DEV_USB7] = { "usb8:", "usb8:/", "USB Drive 8",             "USB8", false },
+    [DEV_MLC]  = { "mlc:",  "mlc:/",  "Wii U Storage (MLC)",     "MLC",  true },
+    [DEV_NAND] = { "nand:", "nand:/", "vWii NAND (SLCCMPT)",     "NAND", true },
+    [DEV_SLC]  = { "slc:",  "slc:/",  "Wii U System NAND (SLC)", "SLC",  false },
+    /* GodModeWii's Wii-only drives: never mounted on the Wii U */
+    [DEV_GCA]     = { "gca:",     "gca:/",     "SD Gecko A",     "GCA" },
+    [DEV_GCB]     = { "gcb:",     "gcb:/",     "SD Gecko B",     "GCB" },
+    [DEV_SEEPROM] = { "seeprom:", "seeprom:/", "SEEPROM",        "SEEP" },
+    [DEV_DISC]    = { "disc:",    "disc:/",    "Disc",           "DISC" },
+    [DEV_MCA]     = { "mca:",     "mca:/",     "Memory Card A",  "MCA" },
+    [DEV_MCB]     = { "mcb:",     "mcb:/",     "Memory Card B",  "MCB" },
+    [DEV_KEYS]    = { "keys:",    "keys:/",    "Console keys",   "KEYS" },
 };
+
+bool g_is_vwii, g_is_dolphin, g_nand_full = true;
 
 const char *g_write_err;
 static FSAClientHandle fsa_client;
@@ -42,7 +54,19 @@ int vfs_dev_of(const char *path)
 
 bool vfs_is_protected(int dev)
 {
-    return dev == DEV_MLC || dev == DEV_NAND;
+    return dev == DEV_MLC || dev == DEV_NAND || dev == DEV_SLC;
+}
+
+bool vfs_is_virtual(int dev) { (void)dev; return false; }
+bool vfs_is_card(int dev) { (void)dev; return false; }
+
+void vfs_shown_path(const char *path, char *out, size_t n)
+{
+    size_t k = 0;
+    if (!n) return;
+    for (const char *q = path; *q && k + 1 < n; q++)
+        if (!(q[0] == '|' && q[1] == '/')) out[k++] = *q;
+    out[k] = '\0';
 }
 
 bool vfs_is_archive(const char *path)
@@ -81,6 +105,15 @@ static bool to_real(const char *path, char *out, size_t outsz)
 static const char *fsa_path(const char *real)
 {
     return strncmp(real, "fs:", 3) == 0 ? real + 3 : real;
+}
+
+bool vfs_os_path(const char *path, char *out, size_t outsz)
+{
+    char real[VFS_PATH_MAX];
+    if (arcfs_is_path(path) || !to_real(path, real, sizeof(real)))
+        return false;
+    int n = snprintf(out, outsz, "%s", fsa_path(real));
+    return n > 0 && (size_t)n < outsz;
 }
 
 bool vfs_parent(const char *path, char *out, size_t outsz)
@@ -180,38 +213,44 @@ static void mount_sd(void)
         snprintf(d->note, sizeof(d->note), "no SD card (insert one, then Remount)");
 }
 
-/* Cafe OS mounts each USB volume as /vol/external01 .. external08. */
+/* USB drives the Wii U formatted (WFS) are mounted by Cafe OS as /vol/storage_usb01 and 02. A FAT
+ * USB drive isn't mounted by the system at all; copy through the SD card or FTP instead. */
 static void mount_usb(void)
 {
     for (int i = 0; i < USB_SLOTS; i++) {
         vfs_dev *d = &g_devs[DEV_USB0 + i];
-        char vol[32];
-        snprintf(vol, sizeof(vol), "fs:/vol/external%02d", i + 1);
-        snprintf(d->real, sizeof(d->real), "%s", vol);
-        d->mounted = dir_exists(vol);
+        d->mounted = false;
+        d->real[0] = '\0';
         d->note[0] = '\0';
-        if (!d->mounted)
-            d->real[0] = '\0';
+        if (i >= 2)
+            continue;
+        char vol[40];
+        snprintf(vol, sizeof(vol), "fs:/vol/storage_usb%02d", i + 1);
+        if (dir_exists(vol)) {
+            snprintf(d->real, sizeof(d->real), "%s", vol);
+            d->mounted = true;
+        }
     }
+}
+
+static void mount_one(int dev, const char *vol, const char *why)
+{
+    vfs_dev *d = &g_devs[dev];
+    d->real[0] = '\0';
+    d->note[0] = '\0';
+    d->mounted = dir_exists(vol);
+    if (d->mounted)
+        snprintf(d->real, sizeof(d->real), "%s", vol);
+    else
+        snprintf(d->note, sizeof(d->note), "%s", why);
 }
 
 static void mount_internal(void)
 {
-    vfs_dev *mlc = &g_devs[DEV_MLC];
-    mlc->real[0] = '\0';
-    mlc->mounted = dir_exists("fs:/vol/storage_mlc01");
-    if (mlc->mounted)
-        snprintf(mlc->real, sizeof(mlc->real), "fs:/vol/storage_mlc01");
-    else
-        snprintf(mlc->note, sizeof(mlc->note), "not accessible");
-
-    vfs_dev *nand = &g_devs[DEV_NAND];
-    nand->real[0] = '\0';
-    nand->mounted = dir_exists("fs:/vol/slc01");
-    if (nand->mounted)
-        snprintf(nand->real, sizeof(nand->real), "fs:/vol/slc01");
-    else
-        snprintf(nand->note, sizeof(nand->note), "needs system access (Aroma / Mocha)");
+    mount_one(DEV_MLC, "fs:/vol/storage_mlc01", "not accessible (needs Aroma / Mocha)");
+    mount_one(DEV_NAND, "fs:/vol/storage_slccmpt01", "needs system access (Aroma / Mocha)");
+    mount_one(DEV_SLC, "fs:/vol/system", "needs system access (Aroma / Mocha)");
+    g_devs[DEV_SLC].always_show = g_devs[DEV_SLC].mounted;
 }
 
 static void fsa_start(void)
@@ -456,9 +495,10 @@ bool vfs_open_read(vfs_file *f, const char *path)
     f->fp = fopen(real, "rb");
     if (!f->fp)
         return false;
-    fseek(f->fp, 0, SEEK_END);
-    f->size = (u64)ftell(f->fp);
-    fseek(f->fp, 0, SEEK_SET);
+    /* off_t is 64 bits: images over 2 GiB read to their end */
+    fseeko(f->fp, 0, SEEK_END);
+    f->size = (u64)ftello(f->fp);
+    fseeko(f->fp, 0, SEEK_SET);
     return true;
 }
 
@@ -477,13 +517,24 @@ bool vfs_open_write(vfs_file *f, const char *path)
     return f->fp != NULL;
 }
 
+void vfs_unbuffered(vfs_file *f)
+{
+    if (f->fp)
+        setvbuf(f->fp, NULL, _IONBF, 0);
+}
+
 s32 vfs_read(vfs_file *f, void *buf, u32 len)
 {
+    ui_busy_tick();
     if (f->arc)
         return arcfs_read(f, buf, len);
     size_t n = fread(buf, 1, len, f->fp);
-    if (n == 0 && ferror(f->fp))
+    /* the error flag is cleared, as stdio would otherwise fail every later read too, even after a
+     * seek: a looping stream would go silent after one bad read near the end of the file */
+    if (ferror(f->fp)) {
+        clearerr(f->fp);
         return -1;
+    }
     return (s32)n;
 }
 
@@ -499,7 +550,8 @@ bool vfs_seek(vfs_file *f, u64 off)
 {
     if (f->arc)
         return arcfs_seek(f, off);
-    return fseek(f->fp, (long)off, SEEK_SET) == 0;
+    clearerr(f->fp);
+    return fseeko(f->fp, (off_t)off, SEEK_SET) == 0;
 }
 
 bool vfs_close_checked(vfs_file *f)

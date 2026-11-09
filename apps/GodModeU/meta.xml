@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
   <name>GodModeU</name>
-  <coder>quatric</coder>
-  <version>0.4.0</version>
-  <release_date>20261013000000</release_date>
+  <coder>quatric &amp; cmyksoda</coder>
+  <version>0.5.0</version>
+  <release_date>20261109000000</release_date>
   <short_description>GodMode9-style file manager for Wii U</short_description>
   <long_description>A text-mode, GodMode9-style file manager for the Wii U.
 
 Browse the SD card, every USB drive, the Wii U's internal storage (MLC) and the vWii NAND, copy, cut, paste and delete between devices, see free space, and change protected storage only after the Konami code and a brick-risk disclaimer.
+
+Opens archives like folders and views images, audio, video and text, Wii U formats included (SARC, BFRES, GTX, BFLIM, BFFNT, BFSAR, BARS, BYML, BFLYT ...). Installs WUP folders and WUD / WUX disc images.
 
 WARNING: modifying the MLC or the vWii NAND can permanently brick your console.</long_description>
 </app>
