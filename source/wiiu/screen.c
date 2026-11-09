@@ -19,8 +19,14 @@
 #include <coreinit/thread.h>
 #include <coreinit/time.h>
 #include <proc_ui/procui.h>
+#include <gx2/clear.h>
+#include <gx2/context.h>
 #include <gx2/display.h>
+#include <gx2/event.h>
+#include <gx2/mem.h>
+#include <gx2/registers.h>
 #include <gx2/state.h>
+#include <gx2/surface.h>
 #include <gx2/swap.h>
 
 #include "screen.h"
@@ -395,4 +401,166 @@ void screen_vsync(void)
 void screen_flush(void)
 {
     present();
+}
+
+/* ---------------------------------------------------------------- GX2, for the system keyboard */
+
+/* The system keyboard (nn::swkbd) draws with GX2, which OSScreen can't host, so while it is up the present
+ * thread is held (the lock), GX2 gets scan buffers, colour and depth buffers and a context state for each
+ * screen, as libwhb's WHBGfx sets them up, and afterwards the screens are pointed back at OSScreen's buffers
+ * as screen_plugin_menu() does. GX2 was started on this thread by screen_init(). */
+#define GX2_TAG 0x534B4244                  /* "SKBD" */
+
+typedef struct {
+    GX2ColorBuffer color;
+    GX2DepthBuffer depth;
+    GX2ContextState *ctx;
+} gx2_target;
+
+static gx2_target tgt[2];
+static void *tv_scan, *drc_scan;
+static bool gx2_on;
+
+static void *fg_alloc(uint32_t size, uint32_t align)
+{
+    return MEMAllocFromFrmHeapEx(MEMGetBaseHeapHandle(MEM_BASE_HEAP_FG), size, align);
+}
+
+static void *mem1_alloc(uint32_t size, uint32_t align)
+{
+    return MEMAllocFromFrmHeapEx(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), size, align);
+}
+
+static bool target_init(gx2_target *t, uint32_t w, uint32_t h, GX2SurfaceUse use)
+{
+    memset(t, 0, sizeof(*t));
+    GX2Surface *c = &t->color.surface;
+    c->use = use;
+    c->dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    c->width = w;
+    c->height = h;
+    c->depth = 1;
+    c->mipLevels = 1;
+    c->format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+    c->aa = GX2_AA_MODE1X;
+    c->tileMode = GX2_TILE_MODE_DEFAULT;
+    t->color.viewNumSlices = 1;
+    GX2CalcSurfaceSizeAndAlignment(c);
+    GX2InitColorBufferRegs(&t->color);
+    c->image = mem1_alloc(c->imageSize, c->alignment);
+    if (!c->image) return false;
+    GX2Invalidate(GX2_INVALIDATE_MODE_CPU, c->image, c->imageSize);
+
+    GX2Surface *d = &t->depth.surface;
+    d->use = GX2_SURFACE_USE_DEPTH_BUFFER | GX2_SURFACE_USE_TEXTURE;
+    d->dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    d->width = w;
+    d->height = h;
+    d->depth = 1;
+    d->mipLevels = 1;
+    d->format = GX2_SURFACE_FORMAT_FLOAT_D24_S8;
+    d->aa = GX2_AA_MODE1X;
+    d->tileMode = GX2_TILE_MODE_DEFAULT;
+    t->depth.viewNumSlices = 1;
+    t->depth.depthClear = 1.0f;
+    GX2CalcSurfaceSizeAndAlignment(d);
+    GX2InitDepthBufferRegs(&t->depth);
+    d->image = mem1_alloc(d->imageSize, d->alignment);
+    if (!d->image) return false;
+    GX2Invalidate(GX2_INVALIDATE_MODE_CPU, d->image, d->imageSize);
+
+    t->ctx = memalign(GX2_CONTEXT_STATE_ALIGNMENT, sizeof(GX2ContextState));
+    if (!t->ctx) return false;
+    GX2SetupContextStateEx(t->ctx, TRUE);
+    GX2SetContextState(t->ctx);
+    GX2SetColorBuffer(&t->color, GX2_RENDER_TARGET_0);
+    GX2SetDepthBuffer(&t->depth);
+    GX2SetViewport(0, 0, (float)w, (float)h, 0.0f, 1.0f);
+    GX2SetScissor(0, 0, w, h);
+    return true;
+}
+
+void screen_gx2_end(void);
+
+bool screen_gx2_begin(void)
+{
+    if (gx2_on) return true;
+    OSLockMutex(&lock);                     /* the present thread waits until screen_gx2_end() */
+    if (!ready) { OSUnlockMutex(&lock); return false; }
+    gx2_on = true;
+    MEMRecordStateForFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), GX2_TAG);
+    MEMRecordStateForFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_FG), GX2_TAG);
+    uint32_t size, unk;
+    GX2CalcTVSize(GX2_TV_RENDER_MODE_WIDE_720P, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8, GX2_BUFFERING_MODE_DOUBLE,
+                  &size, &unk);
+    tv_scan = fg_alloc(size, GX2_SCAN_BUFFER_ALIGNMENT);
+    if (tv_scan) {
+        GX2Invalidate(GX2_INVALIDATE_MODE_CPU, tv_scan, size);
+        GX2SetTVBuffer(tv_scan, size, GX2_TV_RENDER_MODE_WIDE_720P, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8,
+                       GX2_BUFFERING_MODE_DOUBLE);
+        GX2SetTVScale(TV_W, TV_H);
+    }
+    GX2CalcDRCSize(GX2_DRC_RENDER_MODE_SINGLE, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8, GX2_BUFFERING_MODE_DOUBLE,
+                   &size, &unk);
+    drc_scan = fg_alloc(size, GX2_SCAN_BUFFER_ALIGNMENT);
+    if (drc_scan) {
+        GX2Invalidate(GX2_INVALIDATE_MODE_CPU, drc_scan, size);
+        GX2SetDRCBuffer(drc_scan, size, GX2_DRC_RENDER_MODE_SINGLE, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8,
+                        GX2_BUFFERING_MODE_DOUBLE);
+        GX2SetDRCScale(DRC_W, DRC_H);
+    }
+    if (!tv_scan || !drc_scan || !target_init(&tgt[0], TV_W, TV_H, GX2_SURFACE_USE_TEXTURE_COLOR_BUFFER_TV) ||
+        !target_init(&tgt[1], DRC_W, DRC_H, GX2_SURFACE_USE_TEXTURE_COLOR_BUFFER_TV)) {
+        screen_gx2_end();
+        return false;
+    }
+    return true;
+}
+
+void screen_gx2_frame(void (*draw_tv)(void), void (*draw_drc)(void))
+{
+    if (!gx2_on) return;
+    uint32_t swaps, flips;
+    OSTime last_flip, last_vsync;
+    GX2GetSwapStatus(&swaps, &flips, &last_flip, &last_vsync);
+    if (swaps != flips) GX2WaitForFlip();
+    for (int i = 0; i < 2; i++) {
+        gx2_target *t = &tgt[i];
+        GX2ClearColor(&t->color, 0.0f, 0.0f, 0.0f, 1.0f);
+        GX2ClearDepthStencilEx(&t->depth, 1.0f, 0, GX2_CLEAR_FLAGS_BOTH);
+        GX2SetContextState(t->ctx);         /* the clears change the state */
+        if (i == 0) { if (draw_tv) draw_tv(); }
+        else if (draw_drc) draw_drc();
+        GX2CopyColorBufferToScanBuffer(&t->color, i == 0 ? GX2_SCAN_TARGET_TV : GX2_SCAN_TARGET_DRC);
+    }
+    GX2SwapScanBuffers();
+    GX2Flush();
+    GX2DrawDone();
+    GX2SetTVEnable(TRUE);
+    GX2SetDRCEnable(TRUE);
+}
+
+void screen_gx2_end(void)
+{
+    if (!gx2_on) return;
+    GX2DrawDone();
+    for (int i = 0; i < 2; i++) {
+        free(tgt[i].ctx);
+        tgt[i].ctx = NULL;
+    }
+    MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_MEM1), GX2_TAG);
+    MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_FG), GX2_TAG);
+    tv_scan = drc_scan = NULL;
+    gx2_on = false;
+    /* OSScreen's buffers again, all of them redrawn */
+    OSScreenSetBufferEx(SCREEN_TV, mem);
+    OSScreenSetBufferEx(SCREEN_DRC, (uint8_t *)mem + tv_size);
+    OSScreenEnableEx(SCREEN_TV, TRUE);
+    OSScreenEnableEx(SCREEN_DRC, TRUE);
+    for (int i = 0; i < 2; i++) {
+        scr[i].pitch = 0;
+        scr[i].valid[0] = scr[i].valid[1] = false;
+        border_dirty[i] = 3;
+    }
+    OSUnlockMutex(&lock);
 }

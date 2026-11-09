@@ -12,6 +12,7 @@
 #include "input.h"
 #include "pointer.h"
 #include "sfx.h"
+#include "swkbd.h"
 #include "wiilight.h"
 #include "screen.h"
 #include "console.h"
@@ -621,8 +622,8 @@ int ui_menu_ex(const char *title, const char **items, const bool *enabled, int n
     }
 }
 
-/* Character roller: the Wii has no keyboard, so names are spun like a
- * slot machine. Up/Down changes the char, Left/Right moves, 1 deletes. */
+/* Character roller (when the system keyboard can't start): names are spun like a slot machine.
+ * Up/Down changes the char, Left/Right moves, 1 deletes. */
 static const char CHARSET[] =
     " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     ".-_()[]+,!#&'@~";
@@ -630,6 +631,17 @@ static const char CHARSET[] =
 static bool text_input(const char *title, char *buf, int maxlen, const char *charset,
                        bool allow_empty)
 {
+    /* the Wii U's own keyboard on the GamePad, when it starts; the character roller below if not */
+    int k = swkbd_input(title, buf, maxlen);
+    if (k >= 0) {
+        input_flush();
+        int n = (int)strlen(buf);
+        if (!allow_empty)                       /* a name: nothing a path would trip over */
+            for (char *c = buf; *c; c++)
+                if (strchr("/\\:*?\"<>|", *c)) *c = '_';
+        while (!allow_empty && n > 0 && buf[n - 1] == ' ') buf[--n] = '\0';
+        return k == 1 && (allow_empty || n > 0);
+    }
     int w = box_width();
     int len = strlen(buf);
     int pos = len ? len - 1 : 0;

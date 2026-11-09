@@ -118,6 +118,8 @@ GodModeU needs for WUD images.
 
 ## Other features
 
+* **Typing names** (rename, new folder, new file, editing a line) uses the Wii U's own software keyboard on the GamePad,
+  the one games and the Wii U Menu use (nn::swkbd); if it can't start, GodModeWii's character roller is used instead.
 * One text interface for every drive, with free space and a usage bar, and the GodModeWii browser: copy, cut, paste and delete
   with progress and **hold B to cancel**, multi-select, rename, new folder, new file, info, disk usage, text / hex viewers and editors.
 * **Forced risky mode**: enter the Konami code on the logo screen at startup to switch "dangerous permissions always on" on or

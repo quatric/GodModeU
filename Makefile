@@ -27,7 +27,7 @@ INCLUDES	:=	source source/compat source/wiiu source/wiiufmt source/mobiclip sour
 
 # libwiiuinput: every controller, pen tablets / uDraw (drawing) and microphones (voice memos).
 CFLAGS	= -g -O2 -Wall -Wno-unused-function $(MACHDEP) $(INCLUDE) -D__WIIU__ -DGMU -DHAVE_7Z -DHAVE_TABLET -DHAVE_MIC
-CXXFLAGS	=	$(CFLAGS)
+CXXFLAGS	=	$(CFLAGS) -std=gnu++17 -fno-exceptions -fno-rtti
 LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP) -Wl,-Map,$(notdir $*.map)
 
 # libmocha (C++, so libstdc++), libdvm (FAT32 / exFAT), libntfs and lwext4 come from scripts/build_lib*.sh.
@@ -44,7 +44,7 @@ export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
 CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES	:=
+CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 sFILES		:=
 SFILES		:=
 BINFILES	:=	gmsf2.bin sfx.bin tivo.bin pmic_firm.bin

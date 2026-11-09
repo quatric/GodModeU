@@ -35,4 +35,11 @@ void screen_flush(void);
 /* Lets Aroma's plugin menu (L + Down + Minus) open over the app, then redraws. */
 void screen_plugin_menu(void);
 
+/* GX2 on both screens for the system keyboard, which can't draw through OSScreen: begin holds the picture
+ * and sets GX2 up (false if it couldn't), each frame clears, calls draw_tv / draw_drc and shows them, and
+ * end gives the screens back to the picture. Only from the thread that called screen_init(). */
+bool screen_gx2_begin(void);
+void screen_gx2_frame(void (*draw_tv)(void), void (*draw_drc)(void));
+void screen_gx2_end(void);
+
 #endif
