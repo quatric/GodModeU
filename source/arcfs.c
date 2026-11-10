@@ -222,6 +222,34 @@ static bool sibling_provider(const char *name, src_t *out)
     return ok;
 }
 
+static bool files_dir(char *out, size_t n)
+{
+    if (!opening || strchr(opening, '|')) return false;
+    const char *slash = strrchr(opening, '/');
+    if (!slash) return false;
+    snprintf(out, n, "%.*s", (int)(slash - opening), opening);
+    return true;
+}
+
+static bool files_size(const char *path, uint64_t *size)
+{
+    bool dir;
+    u64 s;
+    if (!vfs_stat(path, &dir, &s) || dir) return false;
+    *size = s;
+    return true;
+}
+
+static bool files_open(const char *path, src_t *out)
+{
+    char nm[VFS_NAME_MAX];
+    const char *saved = opening;
+    opening = NULL;                 /* no nesting */
+    bool ok = open_src(path, strlen(path), out, nm, sizeof(nm));
+    opening = saved;
+    return ok;
+}
+
 static void init_providers(void)
 {
     if (provider_set)
@@ -230,6 +258,8 @@ static void init_providers(void)
     archive_set_nand_key_provider(nand_provider);
     archive_set_wfs_key_provider(wfs_key_provider);
     archive_set_sibling_provider(sibling_provider);
+    static const archive_files_t files = { files_dir, files_size, files_open };
+    archive_set_files(&files);
     provider_set = true;
 }
 

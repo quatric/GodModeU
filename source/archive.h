@@ -25,7 +25,8 @@ typedef struct src {
 /* Called between the pieces of src_read_full, for the loading box (set by arcfs). */
 extern void (*busy_hook)(void);
 bool src_read_full(const src_t *s, uint64_t off, void *buf, uint32_t len);
-src_t src_from_memory(uint8_t *data, uint64_t size);        /* owns data, free()d on close */
+src_t src_from_memory(uint8_t *data, uint64_t size);
+void src_close(src_t *s);        /* owns data, free()d on close */
 
 typedef struct tnode {
     char *name;
@@ -80,6 +81,19 @@ void archive_set_wfs_key_provider(archive_wfs_key_fn fn);
 typedef bool (*archive_sibling_fn)(const char *name, src_t *out);
 void archive_set_sibling_provider(archive_sibling_fn fn);
 bool archive_open_sibling(const char *name, src_t *out);
+
+/* Other files by their full path, for archives whose entries live outside them (a BFSAR's streams): the folder
+ * of the archive being opened (only while archive_open runs; false inside another archive), the size of a file
+ * (false when it isn't there) and a read-only source for one. */
+typedef struct {
+    bool (*dir)(char *out, size_t n);
+    bool (*size)(const char *path, uint64_t *size);
+    bool (*open)(const char *path, src_t *out);
+} archive_files_t;
+void archive_set_files(const archive_files_t *f);
+bool archive_opening_dir(char *out, size_t n);
+bool archive_file_size(const char *path, uint64_t *size);
+bool archive_file_open(const char *path, src_t *out);
 
 extern const char *g_archive_err;           /* last failure, for the user */
 

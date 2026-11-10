@@ -31,6 +31,7 @@ typedef struct {
 } ltex_t;
 
 typedef struct {
+    char name[28];
     int tex;                                /* in the layout's textures, -1: none */
     int wrap_s, wrap_t;
     bool srt;
@@ -69,7 +70,42 @@ typedef struct {
     float mag[2];
 } lpane_t;
 
+/* what an animation moves, as the file has it (restored before each pose) */
+typedef struct {
+    float t[2], rot[3], s[2], size[2];
+    uint8_t alpha, flags, vc[4][4];
+} lstate_t;
+
+typedef struct {
+    char tag[5];
+    uint8_t index, target, type;            /* type: 1 step, 2 hermite */
+    int n;
+    float *fr, *val, *slope;
+} acurve_t;
+
+typedef struct {
+    char name[32];
+    bool mat;
+    acurve_t *c;
+    int nc;
+} aent_t;
+
+struct wlanim {
+    char name[64];
+    int frames;
+    bool loop;
+    aent_t *e;
+    int ne;
+    char (*tex)[96];
+    int ntex;
+};
+
 struct wlayout {
+    lstate_t *s0;                           /* the panes and materials as loaded, once an animation is set */
+    lmat_t *m0;
+    const wlanim_t *anim;
+    int *aent;                              /* per animation entry: its pane or material, or -1 */
+    int *atex;                              /* per animation texture: the layout's texture */
     float w, h;
     lpane_t *p;
     int np;
@@ -190,6 +226,7 @@ static void read_materials(wlayout_t *l, const rd_t *r, uint32_t sec, uint32_t e
         memset(m->white, 255, 4);
         uint32_t at = sec + r32(r, sec + 0xC + i * 4);
         if (at + 0x28 > end) continue;
+        rstr(r, at, m->name, sizeof(m->name));
         rcol(r, at + 0x1C, m->black);
         rcol(r, at + 0x20, m->white);
         uint32_t fl = r32(r, at + 0x24), p = at + 0x28;
@@ -393,6 +430,10 @@ void wlayout_free(wlayout_t *l)
     free(l->p);
     free(l->m);
     free(l->t);
+    free(l->s0);
+    free(l->m0);
+    free(l->aent);
+    free(l->atex);
     free(l);
 }
 
@@ -411,6 +452,280 @@ void wlayout_info(const wlayout_t *l, wlayout_info_t *in)
         in->windows += p->kind == K_WND;
         in->parts += p->kind == K_PRT;
         in->hidden += !(p->flags & 1);
+    }
+}
+
+/* ---------------------------------------------------------------- animations (BFLAN) */
+
+/*
+ * "pai1" holds the animated panes and materials: per entry a name and tags (FLPA pane SRT, FLVI visibility, FLVC
+ * vertex colours and alpha, FLMC material colours, FLTS texture SRT, FLTP texture pattern), each with curves
+ * (target, type, keys): step keys are a frame and a u16, hermite keys a frame, a value and a slope.
+ * Targets: FLPA 0 - 9 translate X Y Z, rotate X Y Z, scale X Y, size W H; FLVC 0 - 15 the four corners'
+ * R G B A, 16 the pane's alpha; FLMC 0 - 3 black, 4 - 7 white; FLTS 0 - 4 translate S T, rotate, scale S T.
+ * Only the first texture of a material is animated, and the panes of the layout itself (not its parts').
+ */
+
+static void acurve_free(acurve_t *c)
+{
+    free(c->fr);
+    free(c->val);
+    free(c->slope);
+}
+
+void wlanim_free(wlanim_t *a)
+{
+    if (!a) return;
+    for (int i = 0; i < a->ne; i++) {
+        for (int k = 0; k < a->e[i].nc; k++) acurve_free(&a->e[i].c[k]);
+        free(a->e[i].c);
+    }
+    free(a->e);
+    free(a->tex);
+    free(a);
+}
+
+wlanim_t *wlanim_load(const uint8_t *b, uint32_t n, const char **err)
+{
+    *err = "This isn't a Wii U layout animation (BFLAN)";
+    if (n < 0x14 || memcmp(b, "FLAN", 4)) return NULL;
+    rd_t r = { b, n, b[4] == 0xFF };
+    wlanim_t *a = calloc(1, sizeof(*a));
+    if (!a) return NULL;
+    uint32_t pos = r16(&r, 6), ns = r16(&r, 0x10);
+    for (uint32_t k = 0; k < ns && pos + 8 <= n; k++) {
+        uint32_t sz = r32(&r, pos + 4), end = pos + sz;
+        if (sz < 8 || end > n) break;
+        if (!memcmp(b + pos, "pat1", 4) && sz >= 0x1C) {
+            rstr(&r, pos + r32(&r, pos + 0xC), a->name, sizeof(a->name));
+        } else if (!memcmp(b + pos, "pai1", 4) && sz >= 0x14 && !a->e) {
+            a->frames = r16(&r, pos + 8);
+            a->loop = b[pos + 0xA] != 0;
+            uint32_t tc = r16(&r, pos + 0xC), ec = r16(&r, pos + 0xE), eo = pos + r32(&r, pos + 0x10);
+            if (tc && pos + 0x14 + tc * 4 <= end && tc < 4096) {
+                a->tex = calloc(tc, sizeof(*a->tex));
+                if (!a->tex) goto oom;
+                for (uint32_t i = 0; i < tc; i++) rstr(&r, pos + 0x14 + r32(&r, pos + 0x14 + i * 4), a->tex[i], 96);
+                a->ntex = (int)tc;
+            }
+            if (!ec || ec > 4096 || eo + ec * 4 > end) {
+                pos = end;
+                continue;
+            }
+            a->e = calloc(ec, sizeof(aent_t));
+            if (!a->e) goto oom;
+            for (uint32_t i = 0; i < ec; i++) {
+                uint32_t ent = pos + r32(&r, eo + i * 4);
+                if (ent + 0x20 > end) continue;
+                aent_t *e = &a->e[a->ne];
+                rstr(&r, ent, e->name, sizeof(e->name));
+                e->mat = b[ent + 0x1D] != 0;
+                unsigned ntag = b[ent + 0x1C];
+                e->c = calloc(ntag * 16 + 1, sizeof(acurve_t));
+                if (!e->c) goto oom;
+                a->ne++;
+                for (unsigned j = 0; j < ntag && ent + 0x20 + j * 4 + 4 <= end; j++) {
+                    uint32_t tg = ent + r32(&r, ent + 0x20 + j * 4);
+                    if (tg + 8 > end) continue;
+                    unsigned nc = b[tg + 4];
+                    for (unsigned q = 0; q < nc && q < 16 && tg + 8 + q * 4 + 4 <= end; q++) {
+                        uint32_t en = tg + r32(&r, tg + 8 + q * 4);
+                        if (en + 12 > end) continue;
+                        unsigned type = b[en + 2], kc = r16(&r, en + 4), kw = type == 2 ? 12 : 8;
+                        uint32_t ko = en + r32(&r, en + 8);
+                        if ((type != 1 && type != 2) || !kc || ko + (uint64_t)kc * kw > end) continue;
+                        acurve_t *c = &e->c[e->nc];
+                        memcpy(c->tag, b + tg, 4);
+                        c->index = b[en];
+                        c->target = b[en + 1];
+                        c->type = (uint8_t)type;
+                        c->fr = malloc(kc * sizeof(float));
+                        c->val = malloc(kc * sizeof(float));
+                        c->slope = calloc(kc, sizeof(float));
+                        if (!c->fr || !c->val || !c->slope) {
+                            e->nc++;
+                            goto oom;
+                        }
+                        c->n = (int)kc;
+                        for (unsigned f = 0; f < kc; f++) {
+                            uint32_t at = ko + f * kw;
+                            c->fr[f] = rf(&r, at);
+                            if (type == 2) {
+                                c->val[f] = rf(&r, at + 4);
+                                c->slope[f] = rf(&r, at + 8);
+                            } else {
+                                c->val[f] = r16(&r, at + 4);
+                            }
+                        }
+                        e->nc++;
+                    }
+                }
+            }
+        }
+        pos = end;
+    }
+    if (!a->ne) {
+        *err = "This animation moves nothing";
+        wlanim_free(a);
+        return NULL;
+    }
+    *err = NULL;
+    return a;
+oom:
+    *err = "Not enough memory for this animation";
+    wlanim_free(a);
+    return NULL;
+}
+
+const char *wlanim_name(const wlanim_t *a) { return a->name; }
+int wlanim_frames(const wlanim_t *a) { return a->frames; }
+
+static float acurve_eval(const acurve_t *c, float f)
+{
+    int n = c->n;
+    if (f <= c->fr[0]) return c->val[0];
+    if (f >= c->fr[n - 1]) return c->val[n - 1];
+    int i = 0;
+    while (i + 1 < n && f >= c->fr[i + 1]) i++;
+    if (c->type == 1) return c->val[i];
+    float dt = c->fr[i + 1] - c->fr[i];
+    if (dt <= 0) return c->val[i];
+    float t = (f - c->fr[i]) / dt, t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * c->val[i] + (t3 - 2 * t2 + t) * dt * c->slope[i] +
+           (-2 * t3 + 3 * t2) * c->val[i + 1] + (t3 - t2) * dt * c->slope[i + 1];
+}
+
+static int find_target(const wlayout_t *l, const aent_t *e)
+{
+    if (e->mat) {
+        for (int i = 0; i < l->nm; i++)
+            if (!strcmp(l->m[i].name, e->name)) return i;
+    } else {
+        for (int i = 0; i < l->np; i++)
+            if (!strcmp(l->p[i].name, e->name)) return i;
+    }
+    return -1;
+}
+
+int wlayout_anim_matches(const wlayout_t *l, const wlanim_t *a)
+{
+    int c = 0;
+    for (int i = 0; i < a->ne; i++) c += find_target(l, &a->e[i]) >= 0;
+    return c;
+}
+
+int wlayout_set_anim(wlayout_t *l, const wlanim_t *a, wl_load_fn load, void *ctx)
+{
+    if (!l->s0 && a) {
+        l->s0 = malloc(l->np * sizeof(lstate_t));
+        l->m0 = malloc((l->nm ? l->nm : 1) * sizeof(lmat_t));
+        if (!l->s0 || !l->m0) {
+            free(l->s0);
+            free(l->m0);
+            l->s0 = NULL;
+            l->m0 = NULL;
+            return 0;
+        }
+        for (int i = 0; i < l->np; i++) {
+            const lpane_t *p = &l->p[i];
+            lstate_t *s = &l->s0[i];
+            memcpy(s->t, p->t, sizeof(s->t));
+            memcpy(s->rot, p->rot, sizeof(s->rot));
+            memcpy(s->s, p->s, sizeof(s->s));
+            memcpy(s->size, p->size, sizeof(s->size));
+            memcpy(s->vc, p->vc, sizeof(s->vc));
+            s->alpha = p->alpha;
+            s->flags = p->flags;
+        }
+        if (l->nm) memcpy(l->m0, l->m, l->nm * sizeof(lmat_t));
+    }
+    free(l->aent);
+    free(l->atex);
+    l->aent = NULL;
+    l->atex = NULL;
+    l->anim = NULL;
+    if (!a) {
+        wlayout_pose(l, 0);                 /* back to the file's own */
+        return 0;
+    }
+    int hit = 0;
+    l->aent = malloc((a->ne ? a->ne : 1) * sizeof(int));
+    l->atex = malloc((a->ntex ? a->ntex : 1) * sizeof(int));
+    if (!l->aent || !l->atex) return 0;
+    for (int i = 0; i < a->ne; i++) {
+        l->aent[i] = find_target(l, &a->e[i]);
+        hit += l->aent[i] >= 0;
+    }
+    for (int i = 0; i < a->ntex; i++) l->atex[i] = add_texture(l, a->tex[i]);
+    load_textures(l, load, ctx);
+    l->anim = a;
+    return hit;
+}
+
+/* The layout at `frame` of the animation set (looped), or as loaded when none is set. */
+void wlayout_pose(wlayout_t *l, float frame)
+{
+    if (!l->s0) return;
+    for (int i = 0; i < l->np; i++) {
+        lpane_t *p = &l->p[i];
+        const lstate_t *s = &l->s0[i];
+        memcpy(p->t, s->t, sizeof(s->t));
+        memcpy(p->rot, s->rot, sizeof(s->rot));
+        memcpy(p->s, s->s, sizeof(s->s));
+        memcpy(p->size, s->size, sizeof(s->size));
+        memcpy(p->vc, s->vc, sizeof(s->vc));
+        p->alpha = s->alpha;
+        p->flags = s->flags;
+    }
+    if (l->nm) memcpy(l->m, l->m0, l->nm * sizeof(lmat_t));
+    const wlanim_t *a = l->anim;
+    if (!a || !l->aent) return;
+    if (a->frames > 0) {
+        frame = fmodf(frame, (float)a->frames);
+        if (frame < 0) frame += a->frames;
+    }
+    for (int i = 0; i < a->ne; i++) {
+        int ti = l->aent[i];
+        if (ti < 0) continue;
+        for (int k = 0; k < a->e[i].nc; k++) {
+            const acurve_t *c = &a->e[i].c[k];
+            float v = acurve_eval(c, frame);
+            if (a->e[i].mat) {
+                lmat_t *m = &l->m[ti];
+                if (!memcmp(c->tag, "FLMC", 4) && c->target < 8) {
+                    uint8_t *col = c->target < 4 ? m->black : m->white;
+                    col[c->target & 3] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f);
+                } else if (!memcmp(c->tag, "FLTS", 4) && c->index == 0 && c->target < 5) {
+                    float *f[5] = { &m->tx, &m->ty, &m->rot, &m->sx, &m->sy };
+                    *f[c->target] = v;
+                    m->srt = true;
+                } else if (!memcmp(c->tag, "FLTP", 4) && c->index == 0) {
+                    int pi = (int)v;
+                    if (pi >= 0 && pi < a->ntex && l->atex[pi] >= 0) m->tex = l->atex[pi];
+                }
+                continue;
+            }
+            lpane_t *p = &l->p[ti];
+            if (!memcmp(c->tag, "FLPA", 4)) {
+                switch (c->target) {
+                case 0: p->t[0] = v; break;
+                case 1: p->t[1] = v; break;
+                case 3: case 4: case 5: p->rot[c->target - 3] = v; break;
+                case 6: p->s[0] = v; break;
+                case 7: p->s[1] = v; break;
+                case 8: p->size[0] = v; break;
+                case 9: p->size[1] = v; break;
+                default: break;
+                }
+            } else if (!memcmp(c->tag, "FLVI", 4)) {
+                if (v >= 0.5f) p->flags |= 1;
+                else p->flags &= ~1;
+            } else if (!memcmp(c->tag, "FLVC", 4)) {
+                uint8_t q = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f);
+                if (c->target < 16) p->vc[c->target >> 2][c->target & 3] = q;
+                else if (c->target == 16) p->alpha = q;
+            }
+        }
     }
 }
 

@@ -6,7 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <malloc.h>
+#include <coreinit/time.h>
 
 #include "media.h"
 #include "ui.h"
@@ -70,6 +72,39 @@ static u8 *fetch(void *ctx, const char *name, uint32_t *len)
     return NULL;
 }
 
+#define MAX_ANIMS 64
+
+/* The layout's animations: the .bflan files of the anim/ folder beside blyt/ that move something in it. */
+static int find_anims(const where_t *w, const wlayout_t *l, wlanim_t **out, int max)
+{
+    if (!w->up[0]) return 0;
+    char dir[600];
+    snprintf(dir, sizeof(dir), "%s/anim", w->up);
+    vfs_entry *e = NULL;
+    int cnt = 0, n = 0;
+    if (!vfs_list(dir, &e, &cnt)) return 0;
+    for (int i = 0; i < cnt && n < max; i++) {
+        size_t nl = strlen(e[i].name);
+        if (e[i].is_dir || nl < 6 || strcasecmp(e[i].name + nl - 6, ".bflan")) continue;
+        char p[1024];
+        snprintf(p, sizeof(p), "%s/%s", dir, e[i].name);
+        u32 len;
+        u8 *b = load_all(p, &len, 0x14);
+        if (!b) continue;
+        const char *err;
+        wlanim_t *a = wlanim_load(b, len, &err);
+        free(b);
+        if (!a) continue;
+        if (!wlayout_anim_matches(l, a)) {
+            wlanim_free(a);
+            continue;
+        }
+        out[n++] = a;
+    }
+    free(e);
+    return n;
+}
+
 /* ITU-R BT.601, TV ranges, as the image viewer converts */
 static u32 yuy2_pair(const u8 *a, const u8 *b)
 {
@@ -91,6 +126,17 @@ static void show(const u8 *rgb, int w, int h)
         u32 *row = (u32 *)(fb + (TOP + y) * fw * 2);
         const u8 *s = rgb + (size_t)y * w * 3;
         for (int x = 0; x + 1 < w && x + 1 < fw; x += 2) row[x / 2] = yuy2_pair(s + x * 3, s + x * 3 + 3);
+    }
+}
+
+/* with animations: nothing -> outlines -> outlines and hidden panes -> hidden panes */
+static int next_flags(int f)
+{
+    switch (f & (WL_BOXES | WL_HIDDEN)) {
+    case 0: return WL_BOXES;
+    case WL_BOXES: return WL_BOXES | WL_HIDDEN;
+    case WL_BOXES | WL_HIDDEN: return WL_HIDDEN;
+    default: return 0;
     }
 }
 
@@ -129,6 +175,14 @@ bool flyt_view(const char *path)
         return true;
     }
 
+    wlanim_t *anims[MAX_ANIMS];
+    int nanim = 0, anim = -1;               /* the animation playing, or none */
+    {
+        ui_splash("Looking for animations...");
+        nanim = find_anims(&w, l, anims, MAX_ANIMS);
+    }
+    OSTime t0 = OSGetSystemTime();
+    float frame = 0;
     wlayout_info_t in;
     wlayout_info(l, &in);
     float zoom = 1, px = 0, py = 0;
@@ -139,6 +193,11 @@ bool flyt_view(const char *path)
     ui_clear();
 
     for (;;) {
+        if (anim >= 0) {
+            frame = (float)OSTicksToMilliseconds(OSGetSystemTime() - t0) * 0.03f;
+            wlayout_pose(l, frame);
+            redraw = true;
+        }
         if (redraw) {
             ptr_hide();
             wlayout_render(l, rgb, vw, vh, zoom, px, py, flags, console_font_8x16);
@@ -146,12 +205,19 @@ bool flyt_view(const char *path)
             ui_color(C_WHITE, true);
             ui_field(0, 0, ui_cols() - 1, " LAYOUT  %s  %gx%g  x%.2g%s%s", vfs_basename(path), (double)in.w,
                      (double)in.h, (double)zoom, flags & WL_HIDDEN ? "  +hidden" : "", flags & WL_BOXES ? "  +boxes" : "");
-            ui_field(1, 0, ui_cols() - 1, " BFLYT  %d panes: %d pictures, %d texts, %d windows, %d parts (%d hidden)  %d/%d textures",
-                     in.panes, in.pictures, in.texts, in.windows, in.parts, in.hidden, in.textures - in.missing,
-                     in.textures);
+            if (anim >= 0) {
+                int fr = wlanim_frames(anims[anim]);
+                ui_field(1, 0, ui_cols() - 1, " BFLAN  animation %d/%d  %s  frame %d/%d%s", anim + 1, nanim,
+                         wlanim_name(anims[anim]), fr > 0 ? (int)frame % fr : 0, fr, "");
+            } else {
+                ui_field(1, 0, ui_cols() - 1, " BFLYT  %d panes: %d pictures, %d texts, %d windows, %d parts (%d hidden)  %d/%d textures%s",
+                         in.panes, in.pictures, in.texts, in.windows, in.parts, in.hidden, in.textures - in.missing,
+                         in.textures, nanim ? "  (not animated)" : "");
+            }
             ui_color(C_CYAN, true);
             ui_field(ui_rows() - 1, 0, ui_cols() - 1,
-                     " D-Pad/Point+A drag Move  +/- Zoom  A Outlines  1 Hidden panes  2 Pane list  B Close");
+                     nanim ? " D-Pad/Point+A drag Move  +/- Zoom  A Outlines / hidden  1 Animation  2 Pane list  B Close"
+                           : " D-Pad/Point+A drag Move  +/- Zoom  A Outlines  1 Hidden panes  2 Pane list  B Close");
             ui_reset();
             redraw = false;
         }
@@ -168,7 +234,7 @@ bool flyt_view(const char *path)
             redraw = true;
         }
         if (pev == PD_TAP) {
-            flags ^= WL_BOXES;
+            flags = nanim ? next_flags(flags) : flags ^ WL_BOXES;
             redraw = true;
         }
         int wheel = ptr_wheel();
@@ -191,10 +257,17 @@ bool flyt_view(const char *path)
         if (zoom > 16) zoom = 16;
 
         if ((p & WPAD_BUTTON_A) && !ptr_drag_owns_a(&drag)) {
-            flags ^= WL_BOXES;
+            flags = nanim ? next_flags(flags) : flags ^ WL_BOXES;
             redraw = true;
         }
-        if (p & WPAD_BUTTON_1) {
+        if ((p & WPAD_BUTTON_1) && nanim) {
+            /* the layout as it is, then each animation in turn */
+            if (++anim >= nanim) anim = -1;
+            wlayout_set_anim(l, anim >= 0 ? anims[anim] : NULL, fetch, &w);
+            t0 = OSGetSystemTime();
+            frame = 0;
+            redraw = true;
+        } else if (p & WPAD_BUTTON_1) {
             flags ^= WL_HIDDEN;
             redraw = true;
         }
@@ -210,6 +283,7 @@ bool flyt_view(const char *path)
     ptr_hide();
     free(rgb);
     wlayout_free(l);
+    for (int i = 0; i < nanim; i++) wlanim_free(anims[i]);
     ui_clear();
     return true;
 }

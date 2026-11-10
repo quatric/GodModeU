@@ -70,6 +70,12 @@ void archive_set_wfs_key_provider(archive_wfs_key_fn fn) { wfs_provider = fn; }
 
 static archive_sibling_fn sibling_provider;
 void archive_set_sibling_provider(archive_sibling_fn fn) { sibling_provider = fn; }
+static archive_files_t files;
+void archive_set_files(const archive_files_t *f) { files = *f; }
+bool archive_opening_dir(char *out, size_t n) { return files.dir && files.dir(out, n); }
+bool archive_file_size(const char *path, uint64_t *size) { return files.size && files.size(path, size); }
+bool archive_file_open(const char *path, src_t *out) { return files.open && files.open(path, out); }
+
 bool archive_open_sibling(const char *name, src_t *out)
 {
     return sibling_provider && sibling_provider(name, out);
@@ -142,7 +148,7 @@ src_t src_from_memory(uint8_t *data, uint64_t size)
     return s;
 }
 
-static void src_close(src_t *s)
+void src_close(src_t *s)
 {
     if (s->close && s->ctx) s->close(s->ctx);
     memset(s, 0, sizeof(*s));

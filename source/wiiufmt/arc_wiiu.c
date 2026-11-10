@@ -321,6 +321,60 @@ static void strg_name(const blk_t *s, uint32_t id, char *out, size_t n)
     }
 }
 
+/* Files the sound archive names but doesn't hold (streams in a folder beside it): read from there, one
+ * open at a time. */
+typedef struct {
+    char dir[512];
+    char (*path)[160];                      /* each one's path under dir */
+    int n;
+    int cur;
+    src_t cache;
+} bfsar_priv;
+
+static void bfsar_destroy(archive_t *a)
+{
+    bfsar_priv *p = a->priv;
+    if (!p) return;
+    if (p->cache.read) src_close(&p->cache);
+    free(p->path);
+    free(p);
+    a->priv = NULL;
+}
+
+static int32_t bfsar_read(archive_t *a, const tnode *n, uint64_t off, void *buf, uint32_t len)
+{
+    if (!n->b) return raw_read(a, n, off, buf, len);
+    bfsar_priv *p = a->priv;
+    int i = (int)n->a;
+    if (!p || i < 0 || i >= p->n) return -1;
+    if (off >= n->size) return 0;
+    if (len > n->size - off) len = (uint32_t)(n->size - off);
+    if (!p->cache.read || p->cur != i) {
+        if (p->cache.read) src_close(&p->cache);
+        memset(&p->cache, 0, sizeof(p->cache));
+        char full[700];
+        snprintf(full, sizeof(full), "%s/%s", p->dir, p->path[i]);
+        if (!archive_file_open(full, &p->cache)) {
+            memset(&p->cache, 0, sizeof(p->cache));
+            return -1;
+        }
+        p->cur = i;
+    }
+    return p->cache.read(p->cache.ctx, off, buf, len);
+}
+
+/* The path an external file record names (the record's reference points at a NUL-ended path), or NULL. */
+static const char *bfsar_ext_path(const blk_t *k, const uint8_t *rec)
+{
+    int32_t off = (int32_t)r32(rec + 4, k->le);
+    const uint8_t *s = rec + off;
+    if (off <= 0 || !in(k, s, 2)) return NULL;
+    size_t max = (size_t)(k->b + k->len - s), i;
+    for (i = 0; i < max && s[i]; i++)
+        if (s[i] < 0x20 || s[i] > 0x7E) return NULL;
+    return i && i < max && i < 150 ? (const char *)s : NULL;
+}
+
 archive_t *arc_bfsar_open(const src_t *f, const char *name)
 {
     (void)name;
@@ -427,6 +481,53 @@ archive_t *arc_bfsar_open(const src_t *f, const char *name)
         tree_clean_name(nm);
         if (seqdir < 0 && (seqdir = tree_add(&a->tree, 0, "Sequences", true, 0, 0, 0, 0)) < 0) break;
         tree_add(&a->tree, seqdir, nm, false, sz, at, 0, 0);
+    }
+    /* External files: those of the records that name a path, found beside the archive */
+    char dir[512];
+    if (a && archive_opening_dir(dir, sizeof(dir))) {
+        bfsar_priv *pr = NULL;
+        int extdir = -1;
+        for (uint32_t i = 0; i < nfiles; i++) {
+            int32_t eo = (int32_t)r32(ftab + 4 + i * 8 + 4, le);
+            if (eo == -1 || !in(&I, ftab + eo, 8) || r16(ftab + eo, le) != 0x220D) continue;
+            const char *path = bfsar_ext_path(&I, ftab + eo);
+            if (!path) continue;
+            while (*path == '/') path++;
+            /* its path under the archive's folder, else just its name there */
+            const char *base = strrchr(path, '/');
+            const char *tries[2] = { path, base ? base + 1 : NULL };
+            const char *use = NULL;
+            uint64_t sz = 0;
+            for (int t = 0; t < 2 && !use; t++) {
+                char full[700];
+                if (!tries[t]) continue;
+                snprintf(full, sizeof(full), "%s/%s", dir, tries[t]);
+                if (archive_file_size(full, &sz) && sz) use = tries[t];
+            }
+            if (!use) continue;
+            if (!pr) {
+                pr = calloc(1, sizeof(*pr));
+                if (!pr) break;
+                snprintf(pr->dir, sizeof(pr->dir), "%s", dir);
+                pr->cur = -1;
+                pr->path = calloc(nfiles, sizeof(*pr->path));
+                if (!pr->path) {
+                    free(pr);
+                    pr = NULL;
+                    break;
+                }
+                a->priv = pr;
+                a->read = bfsar_read;
+                a->destroy = bfsar_destroy;
+            }
+            snprintf(pr->path[i], sizeof(pr->path[i]), "%s", use);
+            pr->n = (int)nfiles;
+            char rel[200], clean[160];
+            snprintf(clean, sizeof(clean), "%s", path);
+            if (extdir < 0 && (extdir = tree_add(&a->tree, 0, "External", true, 0, 0, 0, 0)) < 0) break;
+            snprintf(rel, sizeof(rel), "External/%s", clean);
+            if (tree_find(&a->tree, rel) < 0) tree_add_path(&a->tree, rel, false, sz, i, 1, 0);
+        }
     }
     free(names);
     free((void *)I.b);

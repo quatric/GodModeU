@@ -35,4 +35,19 @@ void wlayout_info(const wlayout_t *l, wlayout_info_t *i);
 void wlayout_render(const wlayout_t *l, uint8_t *rgb, int w, int h, float zoom, float pan_x, float pan_y, int flags,
                     const uint8_t *font);
 
+/* Layout animations (BFLAN): a file's animation of panes and materials by name (pane SRT, visibility, vertex
+ * colours and alpha, material colours, the first texture's SRT and pattern). */
+typedef struct wlanim wlanim_t;
+wlanim_t *wlanim_load(const uint8_t *b, uint32_t n, const char **err);
+void wlanim_free(wlanim_t *a);
+const char *wlanim_name(const wlanim_t *a);
+int wlanim_frames(const wlanim_t *a);
+/* How many of the animation's panes and materials this layout has. */
+int wlayout_anim_matches(const wlayout_t *l, const wlanim_t *a);
+/* Picks the animation (its textures come through load); NULL goes back to the layout as it was. Returns how many
+ * of its panes and materials were found. The animation must outlive its use. */
+int wlayout_set_anim(wlayout_t *l, const wlanim_t *a, wl_load_fn load, void *ctx);
+/* Poses the layout at `frame` (30 a second, looped) of the animation set. */
+void wlayout_pose(wlayout_t *l, float frame);
+
 #endif
