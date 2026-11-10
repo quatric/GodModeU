@@ -23,6 +23,12 @@ int wmodel_count(const uint8_t *b, uint32_t n);
 wmodel_t *wmodel_load(const uint8_t *b, uint32_t n, int idx, const char **err);
 void wmodel_free(wmodel_t *m);
 void wmodel_info(const wmodel_t *m, wmodel_info_t *i);
+/* Skeletal animations (FSKA) of the file that move this model's bones. wmodel_pose() poses the model for the
+ * next wmodel_render(): anim < 0 is the bind pose, else animation anim at `frame` (30 frames a second, looped). */
+int wmodel_anim_count(const wmodel_t *m);
+const char *wmodel_anim_name(const wmodel_t *m, int i);
+int wmodel_anim_frames(const wmodel_t *m, int i);
+void wmodel_pose(wmodel_t *m, int anim, float frame);
 /* Draws it into rgb (w * h * 3 bytes), turned by yaw / pitch (degrees), dist model radii away. */
 void wmodel_render(const wmodel_t *m, uint8_t *rgb, int w, int h, float yaw, float pitch, float dist, int shade);
 

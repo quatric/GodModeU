@@ -6,7 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <malloc.h>
+#include <coreinit/time.h>
 
 #include "media.h"
 #include "ui.h"
@@ -101,12 +103,20 @@ bool model_view(const char *path)
 
     float yaw = 30, pitch = 15, dist = 2.6f;
     int shade = WM_LIT;
+    int anim = -1;                          /* the bind pose, or the animation playing (30 frames a second) */
+    OSTime t0 = OSGetSystemTime();
+    float frame = 0;
     bool redraw = true;
     ptr_drag drag = { 0 };
     ptr_begin();
     ui_clear();
 
     for (;;) {
+        if (anim >= 0) {
+            frame = (float)OSTicksToMilliseconds(OSGetSystemTime() - t0) * 0.03f;
+            wmodel_pose(m, anim, frame);
+            redraw = true;
+        }
         if (redraw) {
             ptr_hide();
             wmodel_render(m, rgb, w, h, yaw, pitch, dist, shade);
@@ -115,13 +125,21 @@ bool model_view(const char *path)
             wmodel_info(m, &in);
             ui_color(C_WHITE, true);
             ui_field(0, 0, ui_cols() - 1, " MODEL  %s  [%d/%d] %s", vfs_basename(path), cur + 1, count, in.name);
-            ui_field(1, 0, ui_cols() - 1, " BFRES  %u triangles  %d shapes (%d textured, %d textures)  %d bones  %s",
-                     (unsigned)in.triangles, in.shapes, in.textured, in.textures, in.bones,
-                     shade == WM_LIT ? "lit" : shade == WM_FLAT ? "unlit" : "wireframe");
+            const char *sh = shade == WM_LIT ? "lit" : shade == WM_FLAT ? "unlit" : "wireframe";
+            if (anim >= 0)
+                ui_field(1, 0, ui_cols() - 1, " BFRES  animation %d/%d  %s  frame %d/%d  %d bones  %s", anim + 1,
+                         wmodel_anim_count(m), wmodel_anim_name(m, anim),
+                         (int)fmodf(frame, (float)(wmodel_anim_frames(m, anim) > 1 ? wmodel_anim_frames(m, anim) - 1 : 1)),
+                         wmodel_anim_frames(m, anim), in.bones, sh);
+            else
+                ui_field(1, 0, ui_cols() - 1, " BFRES  %u triangles  %d shapes (%d textured, %d textures)  %d bones  %s%s",
+                         (unsigned)in.triangles, in.shapes, in.textured, in.textures, in.bones, sh,
+                         wmodel_anim_count(m) ? "  (bind pose)" : "");
             ui_color(C_CYAN, true);
             ui_field(ui_rows() - 1, 0, ui_cols() - 1,
-                     count > 1 ? " D-Pad/Point+A drag Rotate  +/- Zoom  A Shading  1 Next  2 Textures  B Close"
-                               : " D-Pad/Point+A drag Rotate  +/- Zoom  A Shading  2 Textures  B Close");
+                     wmodel_anim_count(m) ? " D-Pad/Point+A drag Rotate  +/- Zoom  A Shading  1 Animation  2 Textures  B Close"
+                     : count > 1          ? " D-Pad/Point+A drag Rotate  +/- Zoom  A Shading  1 Next  2 Textures  B Close"
+                                          : " D-Pad/Point+A drag Rotate  +/- Zoom  A Shading  2 Textures  B Close");
             ui_reset();
             redraw = false;
         }
@@ -162,20 +180,30 @@ bool model_view(const char *path)
             shade = (shade + 1) % WM_SHADES;
             redraw = true;
         }
-        if ((p & WPAD_BUTTON_1) && count > 1) {
-            ptr_hide();
-            ui_splash("Loading model...");
-            for (int tries = 0; tries < count; tries++) {
-                cur = (cur + 1) % count;
-                wmodel_t *nm = wmodel_load(b, len, cur, &err);
-                if (nm) {
-                    wmodel_free(m);
-                    m = nm;
-                    break;
+        if ((p & WPAD_BUTTON_1) && (count > 1 || wmodel_anim_count(m))) {
+            /* bind pose -> each animation of the model -> the next model's bind pose */
+            if (anim + 1 < wmodel_anim_count(m)) {
+                anim++;
+                t0 = OSGetSystemTime();
+            } else {
+                anim = -1;
+                wmodel_pose(m, -1, 0);
+                if (count > 1) {
+                    ptr_hide();
+                    ui_splash("Loading model...");
+                    for (int tries = 0; tries < count; tries++) {
+                        cur = (cur + 1) % count;
+                        wmodel_t *nm = wmodel_load(b, len, cur, &err);
+                        if (nm) {
+                            wmodel_free(m);
+                            m = nm;
+                            break;
+                        }
+                    }
+                    yaw = 30, pitch = 15, dist = 2.6f;
+                    ui_clear();
                 }
             }
-            yaw = 30, pitch = 15, dist = 2.6f;
-            ui_clear();
             redraw = true;
         }
         if (p & WPAD_BUTTON_2) {

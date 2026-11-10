@@ -229,9 +229,58 @@ typedef struct {
     int tex;                                /* texture, or -1 */
 } part_t;
 
+/* How a vertex follows the skeleton: mode 1 = the vertex is in the space of its bone (one bone: bi[0]), mode 2
+ * = it is in the bind pose's model space and is blended over nb bones (bind-relative, through their inverse
+ * bind matrices); mode 0 stays where it is. pos / nrm keep the vertex as stored. */
+typedef struct {
+    float pos[3], nrm[3];
+    float bw[4];
+    uint16_t bi[4];
+    uint8_t mode, nb;
+} skin_t;
+
+typedef struct {
+    char name[64];
+    int parent;
+    float s[3], r[4], t[3];                 /* the bind pose, local */
+    bool euler;
+    mtx_t bind, inv;                        /* model-space matrix and its inverse */
+} bone_t;
+
+/* an FSKA curve: keys at frames[], each with `elems` coefficients (cubic 4, linear 2, other 1) */
+typedef struct {
+    float *fr, *key;
+    int n, elems, type;                     /* type: 0 cubic, 1 linear, 2 baked, 4 / 5 / 6 integer steps */
+    bool raw;                               /* keys are 32-bit patterns (integer curves) */
+    float scale, offset;
+} acurve_t;
+
+typedef struct {
+    int bone;
+    bool has[3];                            /* the base values present for scale, rotation, translation */
+    float base[3][4];
+    int curve[3][4];                        /* acurve_t index per component, or -1 */
+} atrack_t;
+
+typedef struct {
+    char name[64];
+    int frames;
+    bool euler;
+    acurve_t *c;
+    int nc;
+    atrack_t *tr;
+    int ntr;
+} anim_t;
+
 struct wmodel {
     vtx_t *v;
-    uint32_t nv, cv;
+    skin_t *sk;                             /* one per vertex */
+    uint32_t nv, cv, csk;
+    bone_t *bone;
+    int nbone;
+    anim_t *anim;
+    int nanim;
+    mtx_t *cur;                             /* scratch: the posed bones */
     uint32_t *tri;                          /* 3 vertex indices each */
     uint32_t ntri, ctri;
     part_t *part;
@@ -328,9 +377,311 @@ static bool take_tex(void *ctx, wtex_t *t, const char *label)
     return true;
 }
 
+/* ---------------------------------------------------------------- skeletal animation (FSKA) */
+
+/* the 32 bits as a float, without bf()'s clean-up (integer curves keep bit patterns here) */
+static float rawf(const uint8_t *p)
+{
+    union { uint32_t u; float f; } c = { b32(p) };
+    return c.f;
+}
+
+static void curve_free(acurve_t *c)
+{
+    free(c->fr);
+    free(c->key);
+}
+
+static void anim_free(anim_t *a)
+{
+    for (int i = 0; i < a->nc; i++) curve_free(&a->c[i]);
+    free(a->c);
+    free(a->tr);
+}
+
+/* One AnimCurve record (0x24 bytes from FRES 3.4, 0x20 before): flags (frame type, key type, curve type),
+ * key count, the animated field, scale, offset, the frame array and the key array. */
+static bool curve_read(const buf_t *d, uint32_t c, bool newl, acurve_t *o)
+{
+    memset(o, 0, sizeof(*o));
+    uint32_t rec = newl ? 0x24 : 0x20;
+    if ((uint64_t)c + rec > d->n) return false;
+    unsigned flags = b16(d->b + c), nk = b16(d->b + c + 2);
+    int ft = flags & 3, kt = flags >> 2 & 3;
+    if (!nk || ft > 2 || kt > 2) return false;
+    o->type = flags >> 4 & 7;
+    o->scale = bf(d->b + c + 0x10);
+    o->offset = rawf(d->b + c + 0x14);
+    o->raw = o->type >= 4 && o->type <= 6;
+    o->elems = o->type == 0 ? 4 : o->type == 1 ? 2 : 1;
+    o->n = nk;
+    uint32_t fa = rel(d, c + (newl ? 0x1C : 0x18)), ka = rel(d, c + (newl ? 0x20 : 0x1C));
+    unsigned fw = ft == 0 ? 4 : ft == 1 ? 2 : 1, kw = kt == 0 ? 4 : kt == 1 ? 2 : 1;
+    if (!fa || !ka || (uint64_t)fa + (uint64_t)nk * fw > d->n || (uint64_t)ka + (uint64_t)nk * o->elems * kw > d->n)
+        return false;
+    o->fr = malloc(nk * sizeof(float));
+    o->key = malloc((size_t)nk * o->elems * sizeof(float));
+    if (!o->fr || !o->key) {
+        curve_free(o);
+        memset(o, 0, sizeof(*o));
+        return false;
+    }
+    for (unsigned i = 0; i < nk; i++) {
+        const uint8_t *p = d->b + fa + i * fw;
+        o->fr[i] = ft == 0 ? bf(p) : ft == 1 ? (int16_t)b16(p) / 32.0f : (float)p[0];
+    }
+    for (unsigned i = 0; i < nk * o->elems; i++) {
+        const uint8_t *p = d->b + ka + i * kw;
+        o->key[i] = kt == 0 ? (o->raw ? rawf(p) : bf(p)) : kt == 1 ? (float)(int16_t)b16(p) : (float)(int8_t)p[0];
+    }
+    return true;
+}
+
+static int32_t curve_int(const acurve_t *c, float stored)
+{
+    if (!c->raw) return (int32_t)stored;
+    union { float f; uint32_t u; } k = { stored };
+    return (int32_t)k.u;
+}
+
+static float curve_value(const acurve_t *c, float stored)
+{
+    if (c->raw) {
+        union { float f; uint32_t u; } o = { c->offset };
+        return (float)(curve_int(c, stored) + (int32_t)o.u);
+    }
+    return stored * c->scale + c->offset;
+}
+
+static float curve_eval(const acurve_t *c, float t)
+{
+    int hi = c->n - 1, e = c->elems;
+    if (t <= c->fr[0]) return curve_value(c, c->key[0]);
+    if (t >= c->fr[hi]) return curve_value(c, c->key[hi * e]);
+    int i = 0;
+    while (i < hi && t >= c->fr[i + 1]) i++;
+    float f0 = c->fr[i], dt = c->fr[i + 1] - f0;
+    const float *k = c->key + i * e;
+    if (dt <= 0) return curve_value(c, k[0]);
+    switch (c->type) {
+    case 0: {                               /* cubic: c0 + c1 u + c2 u^2 + c3 u^3 over the segment */
+        float u = (t - f0) / dt;
+        return k[0] * c->scale + c->offset + u * (k[1] * c->scale + u * (k[2] * c->scale + u * k[3] * c->scale));
+    }
+    case 1:                                 /* linear */
+        return k[0] * c->scale + c->offset + k[1] * c->scale * (t - f0);
+    default:
+        return curve_value(c, k[0]);
+    }
+}
+
+static int find_bone(const wmodel_t *m, const char *name)
+{
+    for (int i = 0; i < m->nbone; i++)
+        if (!strcmp(m->bone[i].name, name)) return i;
+    return -1;
+}
+
+/* One FSKA into the model's animations (those that move at least one of its bones). */
+static void fska_load(wmodel_t *m, const buf_t *d, uint32_t fs, uint32_t ver, const char *name)
+{
+    bool newl = ver >= 0x03040000;
+    if ((uint64_t)fs + (newl ? 0x30 : 0x24) > d->n) return;
+    uint32_t flags = b32(d->b + fs + 0x0C);
+    int frames = newl ? (int32_t)b32(d->b + fs + 0x10) : (int)b16(d->b + fs + 0x10);
+    unsigned nba = newl ? b16(d->b + fs + 0x14) : b16(d->b + fs + 0x12);
+    if (flags & 2) frames++;
+    uint32_t bas = rel(d, fs + 0x20);
+    if (!nba || frames <= 0 || frames > 100000 || !bas || (uint64_t)bas + nba * 0x18ull > d->n) return;
+
+    anim_t an;
+    memset(&an, 0, sizeof(an));
+    snprintf(an.name, sizeof(an.name), "%s", name && *name ? name : "animation");
+    an.frames = frames;
+    an.euler = (flags & 0x1000) != 0;
+    an.c = calloc(nba * 9, sizeof(acurve_t));
+    an.tr = calloc(nba, sizeof(atrack_t));
+    if (!an.c || !an.tr) goto bad;
+
+    unsigned crec = newl ? 0x24 : 0x20;
+    for (unsigned bi = 0; bi < nba; bi++) {
+        uint32_t ba = bas + bi * 0x18;
+        unsigned ncurve = d->b[ba + 0xA];
+        int bone = ncurve ? find_bone(m, rstr(d, ba + 4)) : -1;
+        uint32_t cb = rel(d, ba + 0x10);
+        if (bone < 0 || !cb || (uint64_t)cb + ncurve * crec > d->n) continue;
+        atrack_t *tr = &an.tr[an.ntr];
+        memset(tr, -1, sizeof(*tr));
+        tr->bone = bone;
+        memset(tr->has, 0, sizeof(tr->has));
+        for (int g = 0; g < 3; g++) {
+            tr->base[g][0] = tr->base[g][1] = tr->base[g][2] = g == 0 ? 1.0f : 0.0f;
+            tr->base[g][3] = 1;
+        }
+        unsigned bflags = b32(d->b + ba) & 0x38;
+        uint32_t bo = rel(d, ba + 0x14);
+        if (bo && (uint64_t)bo + 0x28 <= d->n) {
+            tr->has[0] = bflags & 0x08, tr->has[1] = bflags & 0x10, tr->has[2] = bflags & 0x20;
+            if (tr->has[0]) for (int e = 0; e < 3; e++) tr->base[0][e] = bf(d->b + bo + e * 4);
+            if (tr->has[1]) for (int e = 0; e < 4; e++) tr->base[1][e] = bf(d->b + bo + 12 + e * 4);
+            if (tr->has[2]) for (int e = 0; e < 3; e++) tr->base[2][e] = bf(d->b + bo + 28 + e * 4);
+        }
+        int any = 0;
+        for (unsigned k = 0; k < ncurve && k < 9; k++) {
+            acurve_t *c = &an.c[an.nc];
+            if (!curve_read(d, cb + k * crec, newl, c)) continue;
+            uint32_t tg = b32(d->b + cb + k * crec + 4) & 0xFFFFFFFCu;
+            int g = -1, e = 0;
+            if (tg >= 0x04 && tg <= 0x0C) g = 0, e = (tg - 4) / 4;              /* scale */
+            else if (tg >= 0x10 && tg <= 0x18) g = 2, e = (tg - 0x10) / 4;      /* translation */
+            else if (tg >= 0x20 && tg <= 0x2C) g = 1, e = (tg - 0x20) / 4;      /* rotation */
+            if (g < 0) {
+                curve_free(c);
+                continue;
+            }
+            tr->curve[g][e] = an.nc++;
+            any = 1;
+        }
+        if (any) an.ntr++;
+    }
+    if (!an.ntr) goto bad;
+    anim_t *na = realloc(m->anim, (m->nanim + 1) * sizeof(anim_t));
+    if (!na) goto bad;
+    m->anim = na;
+    m->anim[m->nanim++] = an;
+    return;
+bad:
+    anim_free(&an);
+}
+
+/* every FSKA of the file, from the FRES's index group at 0x28 */
+static void fska_all(wmodel_t *m, const buf_t *d)
+{
+    uint32_t grp = rel(d, 0x28);
+    if (!grp || (uint64_t)grp + 8 > d->n || m->nbone <= 0) return;
+    uint32_t cnt = b32(d->b + grp + 4), ver = b32(d->b + 4);
+    if (cnt > 0x4000 || (uint64_t)grp + 8 + (cnt + 1) * 16ull > d->n) return;
+    for (uint32_t i = 0; i < cnt; i++) {
+        uint32_t fs = group_item(d, grp, i);
+        if (!fs || (uint64_t)fs + 0x24 > d->n || memcmp(d->b + fs, "FSKA", 4)) continue;
+        fska_load(m, d, fs, ver, rstr(d, grp + 8 + (i + 1) * 16 + 8));
+    }
+}
+
+static bool m_inv(const mtx_t a, mtx_t o)
+{
+    float c0 = a[5] * a[10] - a[6] * a[9], c1 = a[6] * a[8] - a[4] * a[10], c2 = a[4] * a[9] - a[5] * a[8];
+    float det = a[0] * c0 + a[1] * c1 + a[2] * c2;
+    if (fabsf(det) < 1e-12f) return false;
+    float id = 1.0f / det;
+    float r[9] = { c0 * id, (a[2] * a[9] - a[1] * a[10]) * id, (a[1] * a[6] - a[2] * a[5]) * id,
+                   c1 * id, (a[0] * a[10] - a[2] * a[8]) * id, (a[2] * a[4] - a[0] * a[6]) * id,
+                   c2 * id, (a[1] * a[8] - a[0] * a[9]) * id,  (a[0] * a[5] - a[1] * a[4]) * id };
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) o[i * 4 + j] = r[i * 3 + j];
+        o[i * 4 + 3] = -(o[i * 4] * a[3] + o[i * 4 + 1] * a[7] + o[i * 4 + 2] * a[11]);
+    }
+    return true;
+}
+
+int wmodel_anim_count(const wmodel_t *m) { return m->nanim; }
+const char *wmodel_anim_name(const wmodel_t *m, int i) { return i >= 0 && i < m->nanim ? m->anim[i].name : ""; }
+int wmodel_anim_frames(const wmodel_t *m, int i) { return i >= 0 && i < m->nanim ? m->anim[i].frames : 0; }
+
+/* Poses the model: anim < 0 is the bind pose, otherwise the animation at `frame` (looped). */
+void wmodel_pose(wmodel_t *m, int anim, float frame)
+{
+    if (!m->sk || !m->nbone || !m->cur) return;
+    const anim_t *an = anim >= 0 && anim < m->nanim ? &m->anim[anim] : NULL;
+    if (an) {
+        if (an->frames > 1) {
+            frame = fmodf(frame, (float)(an->frames - 1));
+            if (frame < 0) frame += an->frames - 1;
+        } else frame = 0;
+    }
+    int *track = NULL;
+    if (an) {
+        track = malloc(m->nbone * sizeof(int));
+        if (!track) an = NULL;
+        else {
+            for (int i = 0; i < m->nbone; i++) track[i] = -1;
+            for (int i = 0; i < an->ntr; i++) track[an->tr[i].bone] = i;
+        }
+    }
+    for (int i = 0; i < m->nbone; i++) {
+        const bone_t *b = &m->bone[i];
+        float s[3], r[4], t[3];
+        memcpy(s, b->s, sizeof(s)), memcpy(r, b->r, sizeof(r)), memcpy(t, b->t, sizeof(t));
+        bool euler = b->euler;
+        if (an && track[i] >= 0) {
+            const atrack_t *tr = &an->tr[track[i]];
+            float *dst[3] = { s, r, t };
+            euler = an->euler;
+            for (int g = 0; g < 3; g++) {
+                int ne = g == 1 ? 4 : 3;
+                if (g == 1 && !tr->has[1] && tr->curve[1][0] < 0 && tr->curve[1][1] < 0 && tr->curve[1][2] < 0 &&
+                    tr->curve[1][3] < 0)
+                    euler = b->euler;       /* not animated: the bone's own rotation */
+                for (int e = 0; e < ne; e++) {
+                    if (tr->curve[g][e] >= 0) dst[g][e] = curve_eval(&an->c[tr->curve[g][e]], frame);
+                    else if (tr->has[g]) dst[g][e] = tr->base[g][e];
+                }
+            }
+        }
+        mtx_t local;
+        m_srt(local, s, r, euler, t);
+        if (b->parent >= 0 && b->parent < i) m_mul(m->cur[b->parent], local, m->cur[i]);
+        else memcpy(m->cur[i], local, sizeof(mtx_t));
+    }
+    free(track);
+
+    /* smooth skinning's matrices: posed bone * inverse bind */
+    mtx_t *sm = malloc(m->nbone * sizeof(mtx_t));
+    if (sm)
+        for (int i = 0; i < m->nbone; i++) m_mul(m->cur[i], m->bone[i].inv, sm[i]);
+    for (uint32_t i = 0; i < m->nv; i++) {
+        const skin_t *k = &m->sk[i];
+        vtx_t *v = &m->v[i];
+        if (k->mode == 1 && k->bi[0] < m->nbone) {
+            m_point(m->cur[k->bi[0]], k->pos, v->pos);
+            m_dir(m->cur[k->bi[0]], k->nrm, v->nrm);
+        } else if (k->mode == 2 && sm) {
+            float p[3] = { 0, 0, 0 }, n[3] = { 0, 0, 0 };
+            for (int j = 0; j < k->nb; j++) {
+                if (k->bi[j] >= m->nbone || k->bw[j] <= 0) continue;
+                float q[3], u[3];
+                m_point(sm[k->bi[j]], k->pos, q);
+                m_dir(sm[k->bi[j]], k->nrm, u);
+                for (int c = 0; c < 3; c++) p[c] += q[c] * k->bw[j], n[c] += u[c] * k->bw[j];
+            }
+            memcpy(v->pos, p, sizeof(p));
+            memcpy(v->nrm, n, sizeof(n));
+        } else continue;
+        float l = sqrtf(v->nrm[0] * v->nrm[0] + v->nrm[1] * v->nrm[1] + v->nrm[2] * v->nrm[2]);
+        if (l > 1e-6f) for (int c = 0; c < 3; c++) v->nrm[c] /= l;
+    }
+    free(sm);
+    /* the camera follows the posed model (one that travels would leave the picture) */
+    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+    for (uint32_t i = 0; i < m->ntri * 3; i++) {
+        const float *p = m->v[m->tri[i]].pos;
+        for (int c = 0; c < 3; c++) {
+            if (p[c] < lo[c]) lo[c] = p[c];
+            if (p[c] > hi[c]) hi[c] = p[c];
+        }
+    }
+    if (m->ntri)
+        for (int c = 0; c < 3; c++) m->center[c] = (lo[c] + hi[c]) / 2;
+}
+
 void wmodel_free(wmodel_t *m)
 {
     if (!m) return;
+    for (int i = 0; i < m->nanim; i++) anim_free(&m->anim[i]);
+    free(m->anim);
+    free(m->bone);
+    free(m->cur);
+    free(m->sk);
     for (int i = 0; i < m->ntex; i++) free(m->tex[i].rgba);
     free(m->tex);
     free(m->v);
@@ -370,13 +721,25 @@ wmodel_t *wmodel_load(const uint8_t *b, uint32_t n, int idx, const char **err)
             float r[4] = { bf(e + 0x20), bf(e + 0x24), bf(e + 0x28), bf(e + 0x2C) };
             float t[3] = { bf(e + 0x30), bf(e + 0x34), bf(e + 0x38) };
             mtx_t local;
-            m_srt(local, s, r, (b32(e + 0x10) & 0x7000) == 0x1000, t);
+            bool euler = (b32(e + 0x10) & 0x7000) == 0x1000;
+            m_srt(local, s, r, euler, t);
             int par = (int16_t)b16(e + 6);
             if (par >= 0 && par < i) m_mul(world[par], local, world[i]);   /* parents come first */
             else memcpy(world[i], local, sizeof(mtx_t));
+            if (m->bone || (m->bone = calloc(nbone, sizeof(bone_t)))) {
+                bone_t *bn = &m->bone[i];
+                snprintf(bn->name, sizeof(bn->name), "%s", rstr(d, arr + i * 0x40));
+                bn->parent = par >= 0 && par < i ? par : -1;
+                memcpy(bn->s, s, sizeof(s)), memcpy(bn->r, r, sizeof(r)), memcpy(bn->t, t, sizeof(t));
+                bn->euler = euler;
+                memcpy(bn->bind, world[i], sizeof(mtx_t));
+                if (!m_inv(world[i], bn->inv)) m_ident(bn->inv);
+            }
         }
     }
     m->bones = nbone;
+    m->nbone = m->bone ? nbone : 0;
+    m->cur = m->nbone ? calloc(nbone, sizeof(mtx_t)) : NULL;
 
     /* materials: the first texture each, as wanted names */
     int nmat = b16(b + fm + 0x24);
@@ -421,6 +784,12 @@ wmodel_t *wmodel_load(const uint8_t *b, uint32_t n, int idx, const char **err)
         find_attr(d, fv, "_n0", &N);
         find_attr(d, fv, "_u0", &U);
         find_attr(d, fv, "_i0", &I);
+        stream_t W;
+        find_attr(d, fv, "_w0", &W);
+        /* the bones a smooth vertex's indices name: the shape's own table, else the skeleton's */
+        unsigned nsb = b16(b + sh + 0x14);
+        uint32_t sbt = nsb && nsb < 4096 && (uint64_t)sh + 0x2C <= n ? rel(d, sh + 0x28) : 0;
+        if (sbt && (uint64_t)sbt + nsb * 2 > n) sbt = 0;
 
         uint32_t lod = rel(d, sh + 0x24);
         if (!lod || (uint64_t)lod + 0x1C > n) continue;
@@ -436,21 +805,45 @@ wmodel_t *wmodel_load(const uint8_t *b, uint32_t n, int idx, const char **err)
         /* the vertices, in model space */
         uint32_t base = m->nv;
         if (!grow((void **)&m->v, &m->cv, m->nv + count, sizeof(vtx_t))) goto oom;
+        if (!grow((void **)&m->sk, &m->csk, m->nv + count, sizeof(skin_t))) goto oom;
         const float *shape_bone = skin == 0 && bone < nbone ? world[bone] : NULL;
         for (uint32_t k = 0; k < count; k++) {
             vtx_t *v = &m->v[m->nv + k];
+            skin_t *sk = &m->sk[m->nv + k];
             float a[4];
             memset(v, 0, sizeof(*v));
+            memset(sk, 0, sizeof(*sk));
             if (get(&P, k, a)) memcpy(v->pos, a, 12);
             if (get(&N, k, a)) memcpy(v->nrm, a, 12);
             else v->nrm[1] = 1;
             if (get(&U, k, a)) v->uv[0] = a[0], v->uv[1] = a[1];
+            memcpy(sk->pos, v->pos, 12);
+            memcpy(sk->nrm, v->nrm, 12);
             const float *bm = shape_bone;
+            if (shape_bone) sk->mode = 1, sk->nb = 1, sk->bi[0] = bone;
             if (skin == 1 && get(&I, k, a)) {
                 int mi = (int)a[0];
                 if (mi >= 0 && mi < nmtb) {
                     int bi = b16(b + mtb + mi * 2);
-                    if (bi < nbone) bm = world[bi];
+                    if (bi < nbone) bm = world[bi], sk->mode = 1, sk->nb = 1, sk->bi[0] = bi;
+                }
+            }
+            if (skin >= 2 && nbone && get(&I, k, a)) {
+                float w[4] = { 1, 0, 0, 0 }, sum = 0;
+                if (!get(&W, k, w)) w[0] = 1, w[1] = w[2] = w[3] = 0;
+                int nb = skin < 4 ? skin : 4;
+                for (int j = 0; j < nb; j++) {
+                    int mi = (int)a[j], bi = -1;
+                    if (sbt && mi >= 0 && mi < (int)nsb) bi = b16(b + sbt + mi * 2);
+                    else if (!sbt && mi >= 0 && mi < nmtb) bi = b16(b + mtb + mi * 2);
+                    if (bi < 0 || bi >= nbone || w[j] <= 0) continue;
+                    sk->bi[sk->nb] = bi;
+                    sk->bw[sk->nb++] = w[j];
+                    sum += w[j];
+                }
+                if (sum > 0) {
+                    for (int j = 0; j < sk->nb; j++) sk->bw[j] /= sum;
+                    sk->mode = 2;
                 }
             }
             if (bm) {
@@ -507,6 +900,7 @@ wmodel_t *wmodel_load(const uint8_t *b, uint32_t n, int idx, const char **err)
         if (m->part[i].tex >= 0 && m->tex[m->part[i].tex].rgba) m->textured++;
     free(want);
     free(mat_tex);
+    fska_all(m, d);
 
     /* the bounds, for the camera */
     float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
