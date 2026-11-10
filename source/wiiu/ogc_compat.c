@@ -48,7 +48,7 @@ int32_t LWP_CreateThread(lwp_t *out, void *(*entry)(void *), void *arg, void *st
     /* libogc: 0 (lowest) .. 127 (highest); Cafe OS: 0 (highest) .. 31 (lowest) */
     int p = 31 - prio / 4;
     if (p < 1) p = 1;
-    if (!OSCreateThread(&t->t, trampoline, 0, (char *)t, t->stack + stack_size, stack_size, p,
+    if (!OSCreateThread(&t->t, (OSThreadEntryPointFn)trampoline, 0, (char *)t, t->stack + stack_size, stack_size, p,
                         OS_THREAD_ATTRIB_AFFINITY_ANY)) {
         free(t->stack);
         return -1;

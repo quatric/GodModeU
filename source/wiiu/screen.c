@@ -322,7 +322,7 @@ bool screen_init(void)
 
     stack = memalign(16, 0x10000);
     running = true;
-    if (stack && OSCreateThread(&thread, present_thread, 0, NULL, stack + 0x10000, 0x10000, 16,
+    if (stack && OSCreateThread(&thread, (OSThreadEntryPointFn)present_thread, 0, NULL, stack + 0x10000, 0x10000, 16,
                                 OS_THREAD_ATTRIB_AFFINITY_CPU2)) {
         OSSetThreadName(&thread, "GodModeU screen");
         OSResumeThread(&thread);

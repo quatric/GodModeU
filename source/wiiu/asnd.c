@@ -224,7 +224,7 @@ void ASND_Init(void)
     inited = true;
     stack = memalign(16, 0x8000);
     running = true;
-    if (!stack || !OSCreateThread(&thread, mixer_thread, 0, NULL, stack + 0x8000, 0x8000, 10,
+    if (!stack || !OSCreateThread(&thread, (OSThreadEntryPointFn)mixer_thread, 0, NULL, stack + 0x8000, 0x8000, 10,
                                   OS_THREAD_ATTRIB_AFFINITY_CPU0)) {
         running = false;
         return;
