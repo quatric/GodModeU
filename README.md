@@ -135,6 +135,11 @@ GodModeU needs for WUD images.
 * **Save Wii U keys for GodModeWii** (HOME menu): writes this console's two WFS keys to `sd:/wfs/`, so GodModeWii can read
   the Wii U drive from vWii. They're unique to your console: keep them private.
 * **Aroma's plugin menu** opens over the app with its usual combo (L + Down + Minus).
+* **Split a DLC WAD** (actions menu on a DLC `.wad`, or several marked): cuts it into small WADs the way
+  [dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter) does, each with the TMD as it is (still signed),
+  content 0 and the next 1, 5, 10, 20 or 50 contents, named `<title id>_split_<n>.wad`, in `GodModeU/wad-split/` on the SD card
+  (or a USB drive). DLC WADs with contents missing work too; contents are copied as they are and checked against the TMD. The
+  small WADs install on the vWii with GodModeWii (or any WAD manager) one after another.
 * **FTP server** and **FTP install server**: see [FTP server](#ftp-server).
 
 ### Controls
@@ -230,6 +235,7 @@ GodModeU is built on a lot of other people's work. Thank you!
 * **[libwiiuinput](https://github.com/quatric/libwiiuinput)** (quatric): every controller.
 * **[WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2)** (Dimok, Crediar, xhp-creations, and the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages.
 * **[wud2app](https://github.com/FIX94/wud2app)** by FIX94 (MIT): the WUD layout and how it becomes a WUP folder.
+* **[dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter)** and **[wad2bin](https://github.com/DarkMatterCore/wad2bin)** by DarkMatterCore: the split DLC WAD layout and how the contents of a partial DLC WAD are found.
 * **[nanddumper](https://github.com/GaryOderNichts/nanddumper)** by GaryOderNichts and **[wiiu.hacks.guide](https://wiiu.hacks.guide/)**: the NAND backup instructions.
 * **[ftpii](https://code.google.com/p/ftpii/source/list)** by Joseph Jordan and contributors: the FTP idea.
 * **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors: the file-manager reference.

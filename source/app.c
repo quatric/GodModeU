@@ -20,6 +20,7 @@
 #include "vfs.h"
 #include "ops.h"
 #include "waddump.h"
+#include "wadinstall.h"
 #include "databin.h"
 #include "editor.h"
 #include "risk.h"
@@ -976,6 +977,7 @@ enum {
     A_MKDIR,
     A_MKFILE,
     A_WADDUMP,
+    A_WADSPLIT,
     A_WUP,
     A_WUD,
     A_INFO,
@@ -1082,6 +1084,20 @@ static void actions_menu(void)
         items[n] = "Back up as WAD (YABDM style)";
         en[n] = true;
         code[n++] = A_WADDUMP;
+    }
+
+    /* a DLC WAD -> small WADs (dlc-wad-splitter) */
+    bool splittable = false;
+    for (int i = 0; i < nents && !splittable; i++) {
+        char p[VFS_PATH_MAX];
+        if ((nmarks ? marks[i] : (on_entry && i == e)) && !ents[i].is_dir && entry_type(&ents[i]) == FT_WAD &&
+            vfs_join(p, sizeof(p), cwd, ents[i].name))
+            splittable = wad_is_dlc(p);
+    }
+    if (splittable) {
+        items[n] = "Split DLC into small WADs (dlc-wad-splitter)";
+        en[n] = true;
+        code[n++] = A_WADSPLIT;
     }
 
     /* Wii U titles: a WUP / NUS folder (title.tmd, title.tik, the .app contents), or a disc image */
@@ -1191,6 +1207,14 @@ static void actions_menu(void)
         reload_keep();
         break;
     }
+    case A_WADSPLIT:
+        tp = targets(&t);
+        if (t) {
+            wad_split_paths(tp, t);
+            free_paths(tp, t);
+        }
+        reload_keep();
+        break;
     case A_WUP: {
         tp = NULL;
         t = 0;
