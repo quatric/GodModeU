@@ -69,7 +69,39 @@ Every controller [libwiiuinput](https://github.com/quatric/libwiiuinput) reads w
 Remote's: GamePad, Wii Remotes (with Nunchuk or Classic Controller), Pro Controllers, the GameCube adapter, USB game
 controllers, keyboards and mice. They can be plugged in at any time.
 
-## What it can do
+## Features
+
+**Files and drives**
+
+* One text interface for the SD card, USB drives (WFS, FAT32, exFAT, NTFS, ext2/3/4), MLC and both NANDs, with free space and a
+  usage bar.
+* Copy, cut, paste and delete with progress and **hold B to cancel**, multi-select, rename, new folder, new file, info, disk
+  usage, and text / hex viewers and editors.
+* Protected drives locked behind a Konami code.
+
+**Viewing and playing**
+
+* Everything GodModeWii opens: archives, disc images, disk partitions, WADs, images, audio, MIDI, video, text, PDF and EPUB.
+* Wii U formats: SARC, BFSAR, BFWAR, BARS, NUS3AUDIO, GTX, BFLIM, BFFNT, NUT, TXTR, BYAML, XMB, AAMP.
+* A 3D viewer for BFRES models with skeletal animations, and a BFLYT / BFLAN layout viewer.
+
+**Installing and backing up**
+
+* Install Wii U titles from WUP folders and WUD / WUX disc images.
+* Split DLC WADs into small WADs.
+* NAND / MLC backup instructions, and saving this console's WFS keys for GodModeWii.
+* Export Wii U Miis.
+
+**Network**
+
+* FTP server, FTP install server and Wiiload for `.rpx` / `.wuhb` homebrew.
+
+**Input and extras**
+
+* GamePad (with touch), Wii Remotes, Pro Controllers, GameCube adapter, USB controllers, keyboards and mice, all hot-pluggable.
+* Alarm clock, calculator, clock and calendar, sketchpad, voice memos, sound effects and themes.
+
+## More about the features
 
 * **Browse and manage files:** copy, cut, paste and delete with progress (**hold B to cancel**), multi-select, rename, new
   folder, new file, info, disk usage, and text / hex viewers and editors.
