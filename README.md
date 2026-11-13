@@ -73,33 +73,70 @@ controllers, keyboards and mice. They can be plugged in at any time.
 
 **Files and drives**
 
-* One text interface for the SD card, USB drives (WFS, FAT32, exFAT, NTFS, ext2/3/4), MLC and both NANDs, with free space and a
-  usage bar.
-* Copy, cut, paste and delete with progress and **hold B to cancel**, multi-select, rename, new folder, new file, info, disk
-  usage, and text / hex viewers and editors.
-* Protected drives locked behind a Konami code.
+* SD card, USB drives, the Wii U storage (MLC), the vWii NAND and the Wii U NAND in one text interface
+* Free space and a usage bar for each drive
+* WFS (Wii U), FAT32, exFAT and NTFS USB drives read / write
+* ext2, ext3 and ext4 USB drives read-only
+* Copy, cut, paste and delete with progress, with **hold B to cancel**
+* Multi-select, select all, deselect all and invert selection
+* Rename, new folder and new file
+* Info and folder size
+* Disk usage
+* Text viewer and hex viewer
+* In-place text and hex editors
+* Protected drives locked behind a Konami code, each with its own code
+* Forced risky mode, switched on or off with the Konami code on the logo screen
 
 **Viewing and playing**
 
-* Everything GodModeWii opens: archives, disc images, disk partitions, WADs, images, audio, MIDI, video, text, PDF and EPUB.
-* Wii U formats: SARC, BFSAR, BFWAR, BARS, NUS3AUDIO, GTX, BFLIM, BFFNT, NUT, TXTR, BYAML, XMB, AAMP.
-* A 3D viewer for BFRES models with skeletal animations, and a BFLYT / BFLAN layout viewer.
+* Everything GodModeWii opens: archives, disc images, disk partitions, WADs, images, audio, MIDI, video, text, PDF and EPUB
+* Wii U archives: SARC, `.szs`, BFSAR, BFWAR, BARS and NUS3AUDIO
+* Wii U images: GTX, BFLIM, BFFNT, BFRES textures, NUT, DDS and Retro Studios TXTR
+* A 3D viewer for BFRES models, with skinning and skeletal animations
+* A BFLYT layout viewer with BFLAN animations
+* Wii U audio: BFSTM, BFWAV, BTSND, BFSEQ sequences and IDSP
+* Wii U text formats: BYAML / BYML, XMB, AAMP, BGLPBD, BFLYT, BFLAN and BFSEQ
+* Miis
 
 **Installing and backing up**
 
-* Install Wii U titles from WUP folders and WUD / WUX disc images.
-* Split DLC WADs into small WADs.
-* NAND / MLC backup instructions, and saving this console's WFS keys for GodModeWii.
-* Export Wii U Miis.
+* Install Wii U titles from WUP folders
+* Install Wii U titles from WUD / WUX disc images
+* Back up installed titles as WADs, the way YABDM does
+* Split DLC WADs into small WADs
+* Export all vWii saves
+* Export Wii U Miis as `.ffsd`
+* Save this console's WFS keys for GodModeWii
+* NAND / MLC backup instructions in the HOME menu
 
 **Network**
 
-* FTP server, FTP install server and Wiiload for `.rpx` / `.wuhb` homebrew.
+* FTP server, read-only or read / write, with a random password
+* FTP install server that unpacks `.zip`, `.7z` and `.rar` uploads
+* Wiiload for `.rpx` and `.wuhb` homebrew
 
-**Input and extras**
+**Input**
 
-* GamePad (with touch), Wii Remotes, Pro Controllers, GameCube adapter, USB controllers, keyboards and mice, all hot-pluggable.
-* Alarm clock, calculator, clock and calendar, sketchpad, voice memos, sound effects and themes.
+* GamePad buttons and touch screen
+* Wii Remotes with a Nunchuk or Classic Controller
+* Wii U Pro Controllers and the GameCube adapter
+* USB game controllers, keyboards, mice and pen tablets
+* The Wii U's own on-screen keyboard for typing names
+* Aroma's plugin menu over the app (L + Down + Minus)
+
+**HOME menu extras**
+
+* Sketchpad
+* Voice memos
+* Alarm clock
+* Calculator
+* Clock and calendar
+* Colour themes
+* Sound effects, which can be turned off
+* Lock the protected drives again, remount, restart, power off, exit to the Homebrew Launcher or Wii U Menu
+* A TiVo sound mode, as an easter egg
+
+The details of each are below, and in [docs/FORMATS.md](docs/FORMATS.md).
 
 ## More about the features
 
