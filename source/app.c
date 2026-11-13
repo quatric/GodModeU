@@ -748,7 +748,8 @@ static void show_credits(void)
         "RVZ / WIA: written from Dolphin's format description; Zstandard (Meta), bzip2. LZO1X and Retro Studios PAK layouts match nintoolbox; "
         "lzop by Markus Oberhumer. WFS: wfslib and wfs-tools (koolkdev).",
 
-        "Interface sounds: MoonShell 2.10 (Moonlight; GPL v2 or later).\n\n"
+        "MoonShell (Moonlight) inspired us a lot: the interface sounds are MoonShell 2.10's (GPL v2 or "
+        "later), and the clock, calendar, calculator and alarm follow its own.\n\n"
         "Thanks for using GodModeU!\n\n"
         "Psst... feeling nostalgic? Right here, or on the drive list, enter + A - Y X - (on a Wii Remote, + A - 1 2 -).",
     };
