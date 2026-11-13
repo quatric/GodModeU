@@ -96,53 +96,53 @@ and EPUB. On top of that, the Wii U formats:
 
 | Format | What you see |
 | --- | --- |
-| SARC (`.sarc`, `.pack`, `.szs`) | Its files. `.szs` is unpacked from Yaz0 first |
+| BARS | Each asset's FWAV / FSTP |
 | BFSAR | Every internal file, a *Sequences* folder that plays, and an *External* folder for streams beside it |
 | BFWAR | Its waves |
-| BARS | Each asset's FWAV / FSTP |
 | NUS3AUDIO | Its tracks |
+| SARC (`.sarc`, `.pack`, `.szs`) | Its files. `.szs` is unpacked from Yaz0 first |
 
 *Images*
 
 | Format | What you see |
 | --- | --- |
-| GTX | Every texture |
-| BFLIM | The image |
 | BFFNT | The glyph sheets |
+| BFLIM | The image |
 | BFRES | Its textures |
-| NUT | Smash Bros. for Wii U textures |
 | DDS | The image |
+| GTX | Every texture |
+| NUT | Smash Bros. for Wii U textures |
 | Retro Studios TXTR | Donkey Kong Country: Tropical Freeze textures |
 
 *3D models and layouts*
 
 | Format | What you see |
 | --- | --- |
-| BFRES (v3 / v4) | Every model, drawn in software, with skinning and skeletal animations |
-| BFLYT | The layout drawn in software |
 | BFLAN | Animations, played on their layout |
+| BFLYT | The layout drawn in software |
+| BFRES (v3 / v4) | Every model, drawn in software, with skinning and skeletal animations |
 
 *Audio*
 
 | Format | What you hear |
 | --- | --- |
+| BFSEQ | Sequences from a BFSAR |
 | BFSTM | Streams |
 | BFWAV | Waves |
 | BTSND | The boot sound |
-| BFSEQ | Sequences from a BFSAR |
 | IDSP | NUS3AUDIO's DSP-ADPCM tracks |
 
 *Text views*
 
 | Format | What you see |
 | --- | --- |
+| AAMP | Parameters, lists and objects |
+| BFLAN | What each pane and material animates |
+| BFLYT | Textures, fonts, materials and the pane tree |
+| BFSEQ | Its labels |
+| BGLPBD | Light probes |
 | BYAML / BYML | A YAML-style tree |
 | XMB | Elements and attributes |
-| AAMP | Parameters, lists and objects |
-| BGLPBD | Light probes |
-| BFLYT | Textures, fonts, materials and the pane tree |
-| BFLAN | What each pane and material animates |
-| BFSEQ | Its labels |
 
 * Miis
 
