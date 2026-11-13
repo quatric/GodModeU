@@ -320,7 +320,7 @@ export DEVKITPRO=/opt/devkitpro DEVKITPPC=/opt/devkitpro/devkitPPC
 make
 ```
 
-`make` builds the `libwiiuinput` submodule first, then `GodModeU.rpx` and `GodModeU.wuhb`. CI builds every push (download the
+`make` builds the `libwiiuinput` and `libwiiuupdate` submodules first, then `GodModeU.rpx` and `GodModeU.wuhb`. CI builds every push (download the
 `GodModeU` artifact), and pushing a tag like `v0.5.0` publishes a GitHub Release with the zip.
 
 ## Credits
@@ -337,6 +337,7 @@ clock, calendar, calculator and alarm follow its own.
 * TiVo: the easter-egg interface sounds (`res/tivo.bin`). The last credits page has a hint, and the code also works on the drive list.
 * [libwiiuinput](https://github.com/quatric/libwiiuinput) (quatric): every controller
   * after snes9xgx's Wii U driver (Daryl Borth) and RiftWii's GameCube adapter code
+* [libwiiuupdate](https://github.com/quatric/libwiiuupdate) (quatric): checks GitHub for a newer release at start and installs it in place
 * [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
 * [wii-mobiclip-player](https://github.com/quatric/wii-mobiclip-player) (quatric, MIT): the Mobiclip, THP and Flipnote players
   * FFmpeg's Mobiclip decoder (Florian Nouwt, Adib Surani, Paul B Mahol; LGPL 2.1+)

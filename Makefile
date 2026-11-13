@@ -32,8 +32,8 @@ LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP) -Wl,-Map,$(notdir $*.map)
 
 # libmocha (C++, so libstdc++), libdvm (FAT32 / exFAT), libntfs and lwext4 come from scripts/build_lib*.sh.
 # whb, coreinit, vpad, padscore, sndcore2, nsysnet, nn::ac, mcp and the FSA devoptab all live in libwut.
-LIBS	:=	-linput-wiiu -lext4 -lntfs -ldvm -lmocha -lpng16 -ljpeg -lwebp -lsharpyuv -lvorbisidec -logg -lbz2 -lz -lstdc++ -lwut -lm
-LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
+LIBS	:=	-linput-wiiu -lext4 -lntfs -ldvm -lmocha -lpng16 -ljpeg -lwebp -lsharpyuv -lvorbisidec -logg -lbz2 -lz -lstdc++ -lwiiuupdate -lwut -lm
+LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/libwiiuupdate $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
 			$(CURDIR)/portlibs/ntfs $(CURDIR)/portlibs/ext4 $(PORTLIBS) $(WUT_ROOT)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -59,13 +59,13 @@ export INCLUDE	:=	$(foreach dir,$(INCLUDES), -iquote $(CURDIR)/$(dir)) \
 					-I$(CURDIR)/$(BUILD)
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean all libwiiuinput-lib
+.PHONY: $(BUILD) clean all libwiiuinput-lib libwiiuupdate-lib
 .DEFAULT_GOAL := all
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory $(TARGET).wuhb
 
-$(BUILD): libwiiuinput-lib
+$(BUILD): libwiiuinput-lib libwiiuupdate-lib
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
@@ -73,6 +73,10 @@ $(BUILD): libwiiuinput-lib
 # microphones). The Wii Speak firmware is linked into GodModeU itself (res/pmic_firm.bin).
 libwiiuinput-lib:
 	@$(MAKE) --no-print-directory -C libwiiuinput PMIC_FIRM=none
+
+# The self-update library (HTTPS check of GitHub releases and in-place install).
+libwiiuupdate-lib:
+	@$(MAKE) --no-print-directory -C libwiiuupdate
 
 clean:
 	@echo clean ...

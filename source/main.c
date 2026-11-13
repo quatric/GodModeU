@@ -21,6 +21,7 @@
 #include "sfx.h"
 #include "colors.h"
 #include "alarm.h"
+#include "update.h"
 
 /* The same title IDs WHBProcInit treats as the Homebrew Launcher. */
 bool launched_from_hbl(void)
@@ -53,6 +54,7 @@ int main(int argc, char **argv)
     sfx_load_setting();
     colors_load();
     alarm_load();
+    update_start();
     sfx_play(SFX_STARTUP);                          /* the soft tick of B; in TiVo mode, the TiVo Central chime */
     if (toggled) {
         if (!risk_toggle_forced())
@@ -70,6 +72,7 @@ int main(int argc, char **argv)
 
     ui_splash("Unmounting...");
     risk_lock();
+    update_shutdown();
     ftp_net_shutdown();
     vfs_shutdown();
     input_shutdown();

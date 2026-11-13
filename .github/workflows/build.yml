@@ -66,11 +66,17 @@ jobs:
           cp README.md LICENSE dist/GodModeU/
           cp GodModeU.wuhb dist/
           (cd dist && apt-get update -qq && apt-get install -y -qq zip >/dev/null && zip -qr ../GodModeU.zip GodModeU GodModeU.wuhb)
+          # The layout the app's built-in updater (libwiiuupdate) unpacks: wiiu/apps/<Name>/ with the Aroma bundle.
+          mkdir -p wup/wiiu/apps/GodModeU
+          cp GodModeU.wuhb README.md LICENSE wup/wiiu/apps/GodModeU/
+          (cd wup && zip -qr ../GodModeU-WUP.zip wiiu)
 
       - uses: actions/upload-artifact@v4
         with:
           name: GodModeU
-          path: GodModeU.zip
+          path: |
+            GodModeU.zip
+            GodModeU-WUP.zip
           if-no-files-found: error
 
   release:
@@ -87,7 +93,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" GodModeU.zip \
+          gh release create "${{ github.ref_name }}" GodModeU.zip GodModeU-WUP.zip \
             --repo "${{ github.repository }}" \
             --title "GodModeU ${{ github.ref_name }}" \
             --notes "Copy GodModeU.wuhb to sd:/wiiu/apps/ for Aroma, or the GodModeU folder to sd:/wiiu/apps/ for the Homebrew Launcher. **Changing MLC or NAND data can brick your console** - read the README first."

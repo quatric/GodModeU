@@ -38,6 +38,7 @@
 #include "wiiu_install.h"
 #include "wiiufmt.h"
 #include "usage.h"
+#include "update.h"
 #include "sweeper.h"
 
 volatile bool g_quit_request;
@@ -1516,6 +1517,14 @@ int app_run(void)
             }
             if ((p & WPAD_BUTTON_A) && hit >= 0 && base + hit < count)
                 *cur = base + hit;
+        }
+        {
+            int up = update_poll();
+            if (up == 2) return EXIT_MENU;
+            if (up) {
+                dirty = true;
+                continue;
+            }
         }
         if (alarm_ringing()) {
             const char *opts[] = { "Stop", "Snooze (5 minutes)" };
