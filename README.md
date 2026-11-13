@@ -89,43 +89,61 @@ controllers, keyboards and mice. They can be plugged in at any time.
 
 **Viewing and playing**
 
-* Everything GodModeWii opens
-  * Archives, disc images and disk partitions
-  * WADs
-  * Images, audio, MIDI, video and text
-  * PDF and EPUB
-* Wii U archives
-  * SARC (`.sarc`, `.pack`, `.szs`)
-  * BFSAR
-  * BFWAR
-  * BARS
-  * NUS3AUDIO
-* Wii U images
-  * GTX
-  * BFLIM
-  * BFFNT
-  * BFRES textures
-  * NUT
-  * DDS
-  * Retro Studios TXTR
-* A 3D viewer for BFRES models, with skinning and skeletal animations
-* A layout viewer
-  * BFLYT layouts
-  * BFLAN animations
-* Wii U audio
-  * BFSTM
-  * BFWAV
-  * BTSND
-  * BFSEQ sequences
-  * IDSP
-* Wii U text formats
-  * BYAML / BYML
-  * XMB
-  * AAMP
-  * BGLPBD
-  * BFLYT
-  * BFLAN
-  * BFSEQ
+Everything GodModeWii opens opens here too: archives, disc images and disk partitions, WADs, images, audio, MIDI, video, text, PDF
+and EPUB. On top of that, the Wii U formats:
+
+*Archives* (open like folders)
+
+| Format | What you see |
+| --- | --- |
+| SARC (`.sarc`, `.pack`, `.szs`) | Its files. `.szs` is unpacked from Yaz0 first |
+| BFSAR | Every internal file, a *Sequences* folder that plays, and an *External* folder for streams beside it |
+| BFWAR | Its waves |
+| BARS | Each asset's FWAV / FSTP |
+| NUS3AUDIO | Its tracks |
+
+*Images*
+
+| Format | What you see |
+| --- | --- |
+| GTX | Every texture |
+| BFLIM | The image |
+| BFFNT | The glyph sheets |
+| BFRES | Its textures |
+| NUT | Smash Bros. for Wii U textures |
+| DDS | The image |
+| Retro Studios TXTR | Donkey Kong Country: Tropical Freeze textures |
+
+*3D models and layouts*
+
+| Format | What you see |
+| --- | --- |
+| BFRES (v3 / v4) | Every model, drawn in software, with skinning and skeletal animations |
+| BFLYT | The layout drawn in software |
+| BFLAN | Animations, played on their layout |
+
+*Audio*
+
+| Format | What you hear |
+| --- | --- |
+| BFSTM | Streams |
+| BFWAV | Waves |
+| BTSND | The boot sound |
+| BFSEQ | Sequences from a BFSAR |
+| IDSP | NUS3AUDIO's DSP-ADPCM tracks |
+
+*Text views*
+
+| Format | What you see |
+| --- | --- |
+| BYAML / BYML | A YAML-style tree |
+| XMB | Elements and attributes |
+| AAMP | Parameters, lists and objects |
+| BGLPBD | Light probes |
+| BFLYT | Textures, fonts, materials and the pane tree |
+| BFLAN | What each pane and material animates |
+| BFSEQ | Its labels |
+
 * Miis
 
 **Installing and backing up**
