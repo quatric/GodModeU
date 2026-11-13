@@ -89,13 +89,43 @@ controllers, keyboards and mice. They can be plugged in at any time.
 
 **Viewing and playing**
 
-* Everything GodModeWii opens: archives, disc images, disk partitions, WADs, images, audio, MIDI, video, text, PDF and EPUB
-* Wii U archives: SARC, `.szs`, BFSAR, BFWAR, BARS and NUS3AUDIO
-* Wii U images: GTX, BFLIM, BFFNT, BFRES textures, NUT, DDS and Retro Studios TXTR
+* Everything GodModeWii opens
+  * Archives, disc images and disk partitions
+  * WADs
+  * Images, audio, MIDI, video and text
+  * PDF and EPUB
+* Wii U archives
+  * SARC (`.sarc`, `.pack`, `.szs`)
+  * BFSAR
+  * BFWAR
+  * BARS
+  * NUS3AUDIO
+* Wii U images
+  * GTX
+  * BFLIM
+  * BFFNT
+  * BFRES textures
+  * NUT
+  * DDS
+  * Retro Studios TXTR
 * A 3D viewer for BFRES models, with skinning and skeletal animations
-* A BFLYT layout viewer with BFLAN animations
-* Wii U audio: BFSTM, BFWAV, BTSND, BFSEQ sequences and IDSP
-* Wii U text formats: BYAML / BYML, XMB, AAMP, BGLPBD, BFLYT, BFLAN and BFSEQ
+* A layout viewer
+  * BFLYT layouts
+  * BFLAN animations
+* Wii U audio
+  * BFSTM
+  * BFWAV
+  * BTSND
+  * BFSEQ sequences
+  * IDSP
+* Wii U text formats
+  * BYAML / BYML
+  * XMB
+  * AAMP
+  * BGLPBD
+  * BFLYT
+  * BFLAN
+  * BFSEQ
 * Miis
 
 **Installing and backing up**
