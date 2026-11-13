@@ -113,7 +113,7 @@ controllers, keyboards and mice. They can be plugged in at any time.
 
 * FTP server, read-only or read / write, with a random password
 * FTP install server that unpacks `.zip`, `.7z` and `.rar` uploads
-* Wiiload for `.rpx` and `.wuhb` homebrew
+* Wiiload: send `.rpx` / `.wuhb` homebrew and have it installed to the SD card or a USB drive
 
 **Input**
 
@@ -156,7 +156,7 @@ The details of each are below, and in [docs/FORMATS.md](docs/FORMATS.md).
   USB drive. The Mii database is only read.
 * **Save Wii U keys for GodModeWii** (HOME menu): writes this console's two WFS keys to `sd:/wfs/` so GodModeWii can read
   the Wii U drive from vWii. They are unique to your console, so keep them private.
-* **Wiiload:** homebrew (`.rpx` / `.wuhb`) sent over the network is saved to `sd:/wiiu/apps/`.
+* **Wiiload:** homebrew (`.rpx` / `.wuhb`) sent over the network is installed to `wiiu/apps/` on the SD card or a USB drive. See [below](#installing-with-wiiload).
 * **Extras in the HOME menu:** alarm clock, calculator, clock and calendar, sketchpad, voice memos, sound effects, themes.
 * **Forced risky mode:** enter the Konami code on the logo screen at startup to switch "dangerous permissions always on"
   on or off. It is saved as `sd:/wiiu/apps/GodModeU/force.cfg`.
@@ -193,6 +193,19 @@ offers to delete it. *Show the partitions* lists what is on the disc. You need:
 * room on the SD card for the whole game (no file in a game is over 4 GB, so FAT32 is fine)
 
 Hold **B** to cancel. The HOME menu's *Install Wii U titles (WUP / WUD help)* shows these steps on the console.
+
+## Installing with Wiiload
+
+Wiiload sends homebrew to the Wii U over the network and puts it on the **SD card or a USB drive** (press **1** on the Wii U to
+switch). On the Wii U, open HOME → *Wiiload*, then from your computer:
+
+```sh
+WIILOAD=tcp:192.168.1.23 wiiload MyApp.wuhb
+```
+
+* A `.rpx` goes to `wiiu/apps/<name>/`, and a `.wuhb` to `wiiu/apps/`, where Aroma and the Homebrew Launcher look.
+* A `.zip`, `.7z` or `.rar` is unpacked into `wiiu/apps/`.
+* Hold **B** to cancel.
 
 ## NAND backup
 
@@ -266,37 +279,51 @@ make
 
 GodModeU stands on a lot of other people's work. Thank you!
 
-**MoonShell by Moonlight inspired us a lot.** The [MoonShell](https://www.gamebrew.org/wiki/Moonshell) 2.10 interface
-sounds are used here (GPL-2.0 or later, `res/sfx.bin`), and the clock, calendar, calculator and alarm follow its own.
+**MoonShell by Moonlight inspired us a lot.** Its 2.10 interface sounds are used here (GPL-2.0 or later, `res/sfx.bin`), and the
+clock, calendar, calculator and alarm follow its own.
 
-* **[GodModeWii](https://github.com/quatric/GodModeWii)** (quatric & cmyksoda): the code this port is made of, and its credits.
-* **[GodMode9](https://github.com/d0k3/GodMode9)** by d0k3: the look, feel and workflow this is modelled on.
-* **[nintoolbox](https://github.com/quatric/nintoolbox)** (quatric): file type detection and the Wii U format readers (GX2 tiling
-  after aboood40091's addrlib.py; BFRES, GTX, BFLIM, BFFNT, SARC, BFSAR, BARS, NUS3AUDIO, BYML, XMB, AAMP, BFLYT).
-* **[libwiiuinput](https://github.com/quatric/libwiiuinput)** (quatric): every controller.
-* **[WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2)** (Dimok, Crediar, xhp-creations; the
-  [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and
-  [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error
-  messages.
-* **[wud2app](https://github.com/FIX94/wud2app)** by FIX94 (MIT): the WUD layout and how it becomes a WUP folder.
-* **[dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter)** and
-  **[wad2bin](https://github.com/DarkMatterCore/wad2bin)** by DarkMatterCore: the split DLC WAD layout, and how the contents of
-  a partial DLC WAD are found.
-* **[nanddumper](https://github.com/GaryOderNichts/nanddumper)** by GaryOderNichts and
-  **[wiiu.hacks.guide](https://wiiu.hacks.guide/)**: the NAND backup steps.
-* **[ftpii](https://code.google.com/p/ftpii/source/list)** by Joseph Jordan and contributors: the FTP idea.
-* **[WiiXplorer](https://github.com/niuus/wiixplorer)** by Dimok and contributors: the file manager reference.
-* **wfslib** and **wfs-tools** by koolkdev: the WFS layout.
-* **TiVo**'s interface sounds: an easter egg (`res/tivo.bin`, made by `scripts/make_tivo.py`). The last credits page has a hint,
-  and the code also works on the drive list.
-* **[libmocha](https://github.com/wiiu-env/libmocha)** by Maschell (LGPL-3.0): reaches USB drives, internal storage and both
-  NANDs through Aroma's Mocha.
-* **[lwext4](https://github.com/gkostka/lwext4)** by Grzegorz Kostka (GPL-2.0 / BSD; Extrems' big-endian fork) with Extrems'
-  libdvm ext4 driver (ZPL-2.1), ported and made read-only by `scripts/build_libext4.sh` and `scripts/ext4_driver.patch`.
-* **[libntfs](https://github.com/extremscorner/libntfs)** by Extrems and contributors, on **NTFS-3G** by Tuxera and the NTFS-3G
-  authors (GPL-2.0): NTFS drives.
-* **[libdvm](https://github.com/devkitPro/libdvm)** by fincs / devkitPro (ZPL-2.1) with
-  **[FatFs](https://github.com/devkitPro/fatfs-mod)** by ChaN: FAT32 and exFAT drives.
-* **[wut](https://github.com/devkitPro/wut)** and **devkitPPC** (devkitPro): the toolchain and the Cafe OS libraries.
-* **[unarr](https://github.com/selmf/unarr)** by Jan Ruhe (selmf) and contributors (LGPL-3.0, in `source/unarr`, with the LZMA
-  SDK by Igor Pavlov inside).
+**Code included**
+
+* [GodModeWii](https://github.com/quatric/GodModeWii) (quatric & cmyksoda): the code this port is made of, and all its credits
+* [MoonShell](https://www.gamebrew.org/wiki/Moonshell) (Moonlight): the interface sound effects
+* TiVo: the easter-egg interface sounds (`res/tivo.bin`). The last credits page has a hint, and the code also works on the drive list.
+* [libwiiuinput](https://github.com/quatric/libwiiuinput) (quatric): every controller
+  * after snes9xgx's Wii U driver (Daryl Borth) and RiftWii's GameCube adapter code
+* [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
+* [wii-mobiclip-player](https://github.com/quatric/wii-mobiclip-player) (quatric, MIT): the Mobiclip, THP and Flipnote players
+  * FFmpeg's Mobiclip decoder (Florian Nouwt, Adib Surani, Paul B Mahol; LGPL 2.1+)
+  * NanoJPEG (Martin J. Fiedler) and Tremor
+* [TinySoundFont](https://github.com/schellingb/TinySoundFont) (Bernhard Schelling): MIDI playback
+  * [SFZero](https://github.com/stevefolta/SFZero) (Steve Folta)
+* [dr_libs](https://github.com/mackron/dr_libs) (David Reid): WAV, MP3 and FLAC decoding
+  * [minimp3](https://github.com/lieff/minimp3) (lieff)
+* [Zstandard](https://github.com/facebook/zstd) (Meta): RVZ decoding, with xxHash and Finite State Entropy (Yann Collet)
+* [unarr](https://github.com/selmf/unarr) (selmf and contributors, LGPL-3.0): zip, 7z and RAR readers
+  * LZMA SDK (Igor Pavlov) and The Unarchiver's XADMaster code
+* [lwext4](https://github.com/gkostka/lwext4) (Grzegorz Kostka; Extrems' big-endian fork) and Extrems' libdvm ext4 driver: ext2/3/4 drives
+* [libntfs](https://github.com/extremscorner/libntfs) (Extrems) on NTFS-3G (Tuxera and the NTFS-3G authors): NTFS drives
+* [libdvm](https://github.com/devkitPro/libdvm) (fincs / devkitPro) with [FatFs](https://github.com/devkitPro/fatfs-mod) (ChaN): FAT32 and exFAT drives
+* [wut](https://github.com/devkitPro/wut) and devkitPPC (devkitPro): the toolchain and the Cafe OS libraries
+* libpng, libjpeg-turbo, libwebp, zlib, bzip2 and libogg (devkitPro portlibs)
+
+**Formats and references**
+
+* [nintoolbox](https://github.com/quatric/nintoolbox) (quatric): file type detection and the Wii U format readers
+  * GX2 tiling after aboood40091's addrlib.py, and decaf-emu's AddrLib
+  * BFRES, GTX, BFLIM, BFFNT, SARC, BFSAR, BARS, NUS3AUDIO, BYML, XMB, AAMP, BFLYT
+* [mobipeg](https://github.com/quatric/mobipeg) (quatric): the audio and texture formats, and the AJPG / ODH codec
+* [VGMTrans](https://github.com/vgmtrans/vgmtrans): the RSEQ sequence layouts
+* [RiftWii](https://github.com/KakarottoCake/RiftWii) (KakarottoCake) and Dolphin's format description: the RVZ / WIA reader
+* [lzo](https://www.oberhumer.com/opensource/lzo/) / lzop (Markus Oberhumer): LZO1X
+* [wfslib / wfs-tools](https://github.com/koolkdev/wfs-tools) (koolkdev): the WFS layout
+* [WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2) (Dimok, Crediar, FIX94, xhp-creations; the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages
+* [wud2app](https://github.com/FIX94/wud2app) (FIX94, MIT) and JWUDTool (Maschell): the WUD layout and how it becomes a WUP folder
+* [dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter) and [wad2bin](https://github.com/DarkMatterCore/wad2bin) (DarkMatterCore): the split DLC WAD layout, and finding the contents of a partial DLC WAD
+* [nanddumper](https://github.com/GaryOderNichts/nanddumper) (GaryOderNichts) and [wiiu.hacks.guide](https://wiiu.hacks.guide/): the NAND backup steps
+
+**Inspiration**
+
+* [GodMode9](https://github.com/d0k3/GodMode9) (d0k3) and [GodMode9i](https://github.com/DS-Homebrew/GodMode9i) (DS-Homebrew): the look, feel and workflow
+* MoonCalc and Morning Timer (for MoonShell): the calculator and the alarm
+* [ftpii](https://code.google.com/p/ftpii/source/list) (Joseph Jordan and contributors): the FTP idea
+* [WiiXplorer](https://github.com/niuus/wiixplorer) (Dimok, niuus and contributors): the file manager reference
