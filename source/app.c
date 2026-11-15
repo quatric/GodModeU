@@ -1232,8 +1232,10 @@ static void actions_menu(void)
         break;
     }
     case A_WUD:
-        wud_menu(ep);
-        reload_keep();
+        if (wud_menu(ep))
+            open_archive(&ents[e]);
+        else
+            reload_keep();
         break;
     case A_USAGE:
         usage_browse(cwd);
@@ -1545,6 +1547,7 @@ int app_run(void)
             sfx_play(SFX_MENU);                 /* TiVo mode only */
             if (system_menu())
                 break;
+            cursor_only = false;            /* the menu (and a splash) drew over the screen: redraw it all */
             continue;
         }
 
@@ -1643,8 +1646,10 @@ int app_run(void)
                     bool joined = vfs_join(path, sizeof(path), cwd, en->name);
                     /* by its magic, not its name */
                     ftype_t ft = joined ? ftype_detect(path) : FT_NONE;
-                    if (joined && !vfs_is_archive(cwd) && wud_is_name(en->name))
-                        wud_menu(path);
+                    if (joined && !vfs_is_archive(cwd) && wud_is_name(en->name)) {
+                        if (wud_menu(path))
+                            open_archive(en);
+                    }
                     else if (joined && !vfs_is_archive(cwd) && !strcasecmp(en->name, "title.tmd") && wup_is_folder(cwd)) {
                         char *here = cwd;
                         wup_install_paths(&here, 1);

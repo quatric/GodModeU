@@ -1405,6 +1405,7 @@ static const fmt_t formats[] = {
     { "content.bin", arc_contentbin_probe, arc_contentbin_open },
     { "data.bin",    arc_databin_probe,    arc_databin_open },
     { "WAD",         arc_wad_probe,        arc_wad_open },
+    { "Wii U disc",  arc_wud_probe,        arc_wud_open },
     { "VFF",         arc_vff_probe,        arc_vff_open },
     { "U8",          probe_u8,             open_u8 },
     { "IMD5",        probe_imd5,           open_imd5 },

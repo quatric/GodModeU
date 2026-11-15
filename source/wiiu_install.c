@@ -21,13 +21,10 @@
 #include "ops.h"
 #include "aes.h"
 #include "sha1.h"
+#include "archive.h"
 
 #define APP_DIR "sd:/wiiu/apps/GodModeU"
 
-static u16 be16(const u8 *p) { return (u16)(p[0] << 8 | p[1]); }
-static u32 be32(const u8 *p) { return (u32)p[0] << 24 | (u32)p[1] << 16 | (u32)p[2] << 8 | p[3]; }
-static u64 be64(const u8 *p) { return (u64)be32(p) << 32 | be32(p + 4); }
-static u32 le32(const u8 *p) { return (u32)p[3] << 24 | (u32)p[2] << 16 | (u32)p[1] << 8 | p[0]; }
 static u64 le64(const u8 *p) { return (u64)le32(p + 4) << 32 | le32(p); }
 
 static void msg(int color, const char *title, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
@@ -222,6 +219,7 @@ typedef struct {
     int kind;
     char dir[VFS_PATH_MAX];
     vfs_file f;
+    const src_t *s;  /* set when the image is read through an archive source (a mounted image) */
     bool open;
     int part;        /* the part open (IMG_PARTS) */
     int nparts;
@@ -251,17 +249,22 @@ static bool raw_read(vfs_file *f, u64 off, void *buf, u32 len)
     return vfs_seek(f, off) && vfs_read(f, buf, len) == (s32)len;
 }
 
+static bool im_raw(wimg_t *im, u64 off, void *buf, u32 len)
+{
+    return im->s ? src_read_full(im->s, off, buf, len) : raw_read(&im->f, off, buf, len);
+}
+
 static bool img_read(wimg_t *im, u64 off, void *buf, u32 len)
 {
     u8 *o = buf;
-    if (im->kind == IMG_PLAIN) return raw_read(&im->f, off, buf, len);
+    if (im->kind == IMG_PLAIN) return im_raw(im, off, buf, len);
     while (len) {
         u32 n;
         if (im->kind == IMG_PARTS) {
             int p = (int)(off / PART_SIZE);
             u64 within = off % PART_SIZE;
             n = (u32)((PART_SIZE - within) < len ? (PART_SIZE - within) : len);
-            if (!parts_open(im, p) || !raw_read(&im->f, within, o, n)) return false;
+            if (!parts_open(im, p) || !im_raw(im, within, o, n)) return false;
         } else {
             u64 s = off / im->ssz;
             u32 within = (u32)(off % im->ssz);
@@ -275,7 +278,7 @@ static bool img_read(wimg_t *im, u64 off, void *buf, u32 len)
             }
             n = run < len ? (u32)run : len;
             u64 real = im->dstart + (u64)im->idx[s] * im->ssz + within;
-            if (!raw_read(&im->f, real, o, n)) return false;
+            if (!im_raw(im, real, o, n)) return false;
         }
         o += n;
         off += n;
@@ -300,6 +303,8 @@ static bool is_part_name(const char *name, int *num)
     *num = k;
     return true;
 }
+
+static bool img_detect(wimg_t *im, char *err, size_t errn);
 
 static bool img_open(wimg_t *im, const char *path, char *err, size_t errn)
 {
@@ -334,8 +339,14 @@ static bool img_open(wimg_t *im, const char *path, char *err, size_t errn)
     }
     vfs_unbuffered(&im->f);
     im->open = true;
+    return img_detect(im, err, errn);
+}
+
+/* WUX or plain, by the header. */
+static bool img_detect(wimg_t *im, char *err, size_t errn)
+{
     u8 h[0x20];
-    if (!raw_read(&im->f, 0, h, sizeof(h))) {
+    if (!im_raw(im, 0, h, sizeof(h))) {
         snprintf(err, errn, "Couldn't read the file.");
         img_close(im);
         return false;
@@ -351,7 +362,7 @@ static bool img_open(wimg_t *im, const char *path, char *err, size_t errn)
         }
         im->nidx = (u32)((im->size + im->ssz - 1) / im->ssz);
         im->idx = malloc((size_t)im->nidx * 4);
-        if (!im->idx || !raw_read(&im->f, 0x20, im->idx, im->nidx * 4)) {
+        if (!im->idx || !im_raw(im, 0x20, im->idx, im->nidx * 4)) {
             snprintf(err, errn, "Couldn't read the WUX sector table.");
             img_close(im);
             return false;
@@ -750,8 +761,202 @@ static int extract(wimg_t *im, disc_t *d, const char *out, char *err, size_t err
     return r;
 }
 
-void wud_menu(const char *path)
+
+/* ================================================================ mounting a disc image */
+
+/* The game partition's files as an archive, so the image opens like a GameCube / Wii one: the FST (content
+ * 0) names each file and the content it lives in; hashed contents are 0x10000 byte blocks (0x400 of hashes,
+ * 0xFC00 of data, the data's IV the block's own hash entry), the others plain CBC. Read-only. */
+
+bool arc_wud_probe(const src_t *file, const char *name)
 {
+    int k;
+    return name && wud_is_name(name) && !is_part_name(vfs_basename(name), &k) && file->size >= 0x20000;
+}
+
+typedef struct {
+    wimg_t im;
+    disc_t d;
+    aes128_t key;
+    int cc;                 /* the hashed block cached: content, block */
+    u64 cb;
+    u8 *raw, *plain;        /* 0x10000, 0xFC00 */
+} wudpriv;
+
+static char wud_err[320];
+
+static bool wud_content(wudpriv *p, int c, u64 *start, u64 *size, bool *hashed)
+{
+    const u8 *r = tmd_content(&p->d, c);
+    *size = be64(r + 8);
+    *hashed = (be16(r + 6) & 2) != 0;
+    *start = p->d.gm_off + (u64)be32(p->d.fst + 0x20 + c * 0x20) * 0x8000;
+    return true;
+}
+
+static bool wud_hblock(wudpriv *p, int c, u64 blk)
+{
+    if (p->cc == c && p->cb == blk) return true;
+    u64 start, size;
+    bool hashed;
+    wud_content(p, c, &start, &size, &hashed);
+    if (!img_read(&p->im, start + blk * 0x10000, p->raw, 0x10000)) return false;
+    u8 iv[16] = { 0 };
+    aes128_cbc_decrypt(&p->key, iv, p->raw, p->raw, 0x400);
+    memcpy(iv, p->raw + (blk % 16) * 20, 16);
+    aes128_cbc_decrypt(&p->key, iv, p->raw + 0x400, p->plain, 0xFC00);
+    p->cc = c;
+    p->cb = blk;
+    return true;
+}
+
+static int32_t wud_read(archive_t *a, const tnode *n, uint64_t off, void *buf, uint32_t len)
+{
+    wudpriv *p = a->priv;
+    if (off >= n->size) return 0;
+    if (len > n->size - off) len = (uint32_t)(n->size - off);
+    int c = (int)n->c;
+    u64 start, size;
+    bool hashed;
+    wud_content(p, c, &start, &size, &hashed);
+    u64 pos = n->a + off;
+    u8 *o = buf;
+    u32 done = 0;
+    while (done < len) {
+        if (hashed) {
+            u64 blk = pos / 0xFC00;
+            u32 within = (u32)(pos % 0xFC00), take = 0xFC00 - within;
+            if (take > len - done) take = len - done;
+            if (!wud_hblock(p, c, blk)) return done ? (int32_t)done : -1;
+            memcpy(o + done, p->plain + within, take);
+            pos += take;
+            done += take;
+        } else {
+            u64 a0 = pos & ~(u64)15;
+            u32 skip = (u32)(pos - a0), take = 0x8000 - skip;
+            if (take > len - done) take = len - done;
+            u32 span = (u32)ALIGN16(skip + take);
+            u8 iv[16] = { 0 };
+            if (a0) {
+                if (!img_read(&p->im, start + a0 - 16, iv, 16)) return done ? (int32_t)done : -1;
+            } else {
+                iv[0] = (u8)(c >> 8);
+                iv[1] = (u8)c;
+            }
+            if (!img_read(&p->im, start + a0, p->raw, span)) return done ? (int32_t)done : -1;
+            aes128_cbc_decrypt(&p->key, iv, p->raw, p->plain, span);
+            memcpy(o + done, p->plain + skip, take);
+            pos += take;
+            done += take;
+        }
+    }
+    return (int32_t)done;
+}
+
+static void wud_destroy(archive_t *a)
+{
+    wudpriv *p = a->priv;
+    if (!p) return;
+    memset(&p->key, 0, sizeof(p->key));        /* keys don't stay in memory */
+    memset(p->d.tkey, 0, sizeof(p->d.tkey));
+    disc_free(&p->d);
+    img_close(&p->im);
+    free(p->raw);
+    free(p->plain);
+    free(p);
+}
+
+archive_t *arc_wud_open(const src_t *f, const char *name)
+{
+    g_archive_err = wud_err;
+    wudpriv *p = calloc(1, sizeof(*p));
+    if (!p) {
+        snprintf(wud_err, sizeof(wud_err), "Out of memory");
+        return NULL;
+    }
+    p->raw = memalign(0x40, 0x10000);
+    p->plain = memalign(0x40, 0x10000);
+    p->cc = -1;
+    p->im.s = f;
+    if (!archive_opening_dir(p->im.dir, sizeof(p->im.dir))) p->im.dir[0] = '\0';
+    if (!p->raw || !p->plain || !img_detect(&p->im, wud_err, sizeof(wud_err)) ||
+        !disc_open(&p->im, name, &p->d, wud_err, sizeof(wud_err))) {
+        if (!wud_err[0] || (!p->raw || !p->plain)) snprintf(wud_err, sizeof(wud_err), "Out of memory");
+        goto fail;
+    }
+    aes128_init_dec(&p->key, p->d.tkey);
+
+    archive_t *a = archive_alloc("Wii U disc");
+    if (!a) goto fail;
+    a->base = *f;
+    a->src = a->base;
+    a->read = wud_read;
+    a->destroy = wud_destroy;
+    a->priv = p;
+    p->im.s = &a->base;
+
+    const u8 *fst = p->d.fst;
+    u32 ecount = be32(fst + 8) << 5;
+    const u8 *ents = fst + 0x20 + ecount;
+    u32 total = be32(ents + 8);
+    u64 nameoff = 0x20 + (u64)ecount + (u64)total * 16;
+    if (total < 2 || nameoff >= p->d.fstsize) {
+        snprintf(wud_err, sizeof(wud_err), "The game's file table is damaged");
+        goto fail_a;
+    }
+    int stk_node[64];
+    u32 stk_end[64];
+    int sp = 0;
+    stk_node[0] = 0;
+    stk_end[0] = total;
+    for (u32 i = 1; i < total; i++) {
+        while (sp > 0 && i >= stk_end[sp]) sp--;
+        const u8 *e = ents + (u64)i * 16;
+        if (e + 16 > fst + p->d.fstsize) break;
+        u32 no = be32(e) & 0xFFFFFF;
+        if (nameoff + no >= p->d.fstsize) continue;
+        char nm[200];
+        size_t k = 0;
+        for (const char *s = (const char *)fst + nameoff + no;
+             *s && k < sizeof(nm) - 1 && (const u8 *)s < fst + p->d.fstsize; s++)
+            nm[k++] = *s;
+        nm[k] = '\0';
+        if (!k) continue;
+        tree_clean_name(nm);
+        if (e[0] & 1) {
+            u32 next = be32(e + 8);
+            int idx = tree_add(&a->tree, stk_node[sp], nm, true, 0, 0, 0, 0);
+            if (idx >= 0 && sp < 63 && next > i && next <= total) {
+                sp++;
+                stk_node[sp] = idx;
+                stk_end[sp] = next;
+            }
+        } else {
+            u32 fo = be32(e + 4), sz = be32(e + 8);
+            u16 flags = be16(e + 12), ci = be16(e + 14);
+            if (ci >= p->d.ncontents) continue;
+            tree_add(&a->tree, stk_node[sp], nm, false, sz, (flags & 4) ? fo : (u64)fo << 5, 0, ci);
+        }
+    }
+    if (a->tree.count <= 1) {
+        snprintf(wud_err, sizeof(wud_err), "The game partition holds no files");
+        goto fail_a;
+    }
+    return a;
+fail_a:
+    p->im.s = NULL;                                 /* the caller keeps the file on failure */
+    memset(&a->base, 0, sizeof(a->base));
+    memset(&a->src, 0, sizeof(a->src));
+    archive_close(a);                               /* frees p through wud_destroy */
+    return NULL;
+fail:
+    wud_destroy(&(archive_t){ .priv = p });
+    return NULL;
+}
+
+bool wud_menu(const char *path)
+{
+    bool mount = false;
     wimg_t im;
     char err[384];
     ui_busy_begin("Reading the disc image");
@@ -782,9 +987,14 @@ void wud_menu(const char *path)
             "Install to a USB drive",
             "Only write the WUP folder to sd:/install/",
             "Show the partitions",
+            "Mount it and browse the files",
         };
-        int c = ui_menu(title, items, NULL, 4, 0);
+        int c = ui_menu(title, items, NULL, 5, 0);
         if (c < 0) break;
+        if (c == 4) {
+            mount = true;
+            break;
+        }
         if (c == 3) {
             char t[1536];
             size_t n = 0;
@@ -844,6 +1054,7 @@ done:
     if (d) disc_free(d);
     free(d);
     img_close(&im);
+    return mount;
 }
 
 /* ================================================================ help */

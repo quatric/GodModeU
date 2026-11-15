@@ -22,7 +22,8 @@ void wup_install_paths(char **paths, int n);
 /* .wud / .wux by name */
 bool wud_is_name(const char *name);
 /* What to do with a disc image: install it, extract the WUP to a drive, look at its partitions. */
-void wud_menu(const char *path);
+/* Returns true when the user chose to mount (browse) the image: the caller opens it as an archive. */
+bool wud_menu(const char *path);
 
 /* Help pages (SYSTEM menu). */
 void nand_backup_help(void);

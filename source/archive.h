@@ -181,6 +181,8 @@ bool arc_zip7zrar_probe(const src_t *file, const char *name);  /* zip, 7z, rar (
 archive_t *arc_zip7zrar_open(const src_t *file, const char *name);
 bool arc_gfa_probe(const src_t *file, const char *name);
 archive_t *arc_gfa_open(const src_t *file, const char *name);
+bool arc_wud_probe(const src_t *file, const char *name);       /* Wii U WUD / WUX disc image */
+archive_t *arc_wud_open(const src_t *file, const char *name);
 bool arc_wad_probe(const src_t *file, const char *name);
 archive_t *arc_wad_open(const src_t *file, const char *name);
 bool arc_contentbin_probe(const src_t *file, const char *name);
