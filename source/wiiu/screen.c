@@ -103,10 +103,14 @@ static void row_rgba(const uint8_t *s, uint32_t *out)
 
 static uint32_t row_hash(const uint8_t *row)
 {
+    /* every bit of every word counts: a row that changes anywhere must hash differently, or it is
+     * never redrawn and the old picture shows through as stripes */
     const uint32_t *w = (const uint32_t *)row;
     uint32_t h = 2166136261u;
-    for (int i = 0; i < SCREEN_W / 2; i += 4)
-        h = ((h ^ w[i]) * 16777619u ^ w[i + 1] ^ (w[i + 2] << 7) ^ (w[i + 3] >> 3)) * 16777619u;
+    for (int i = 0; i < SCREEN_W / 2; i++) {
+        h = (h ^ w[i]) * 16777619u;
+        h ^= h >> 15;
+    }
     return h;
 }
 
@@ -552,6 +556,14 @@ void screen_gx2_end(void)
     MEMFreeByStateToFrmHeap(MEMGetBaseHeapHandle(MEM_BASE_HEAP_FG), GX2_TAG);
     tv_scan = drc_scan = NULL;
     gx2_on = false;
+    /* GX2 left the scan-out set for its own (tiled) buffers, which OSScreenSetBufferEx doesn't undo, so
+     * the picture came back garbled: wait for the last flip, then start OSScreen over (GX2 stays up). */
+    uint32_t swaps, flips;
+    OSTime last_flip, last_vsync;
+    GX2GetSwapStatus(&swaps, &flips, &last_flip, &last_vsync);
+    if (swaps != flips) GX2WaitForFlip();
+    OSScreenShutdown();
+    OSScreenInit();
     /* OSScreen's buffers again, all of them redrawn */
     OSScreenSetBufferEx(SCREEN_TV, mem);
     OSScreenSetBufferEx(SCREEN_DRC, (uint8_t *)mem + tv_size);
