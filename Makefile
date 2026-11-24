@@ -33,6 +33,10 @@ LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP) -Wl,-Map,$(notdir $*.map)
 # libmocha (C++, so libstdc++), libdvm (FAT32 / exFAT), libntfs and lwext4 come from scripts/build_lib*.sh.
 # whb, coreinit, vpad, padscore, sndcore2, nsysnet, nn::ac, mcp and the FSA devoptab all live in libwut.
 LIBS	:=	-linput-wiiu -lext4 -lntfs -ldvm -lmocha -lpng16 -ljpeg -lwebp -lsharpyuv -lvorbisidec -logg -lbz2 -lz -lstdc++ -lwiiuupdate -lwut -lm
+# M4A (AAC) playback: only when devkitPro's ppc-faad2 is installed (dkp-pacman -S ppc-faad2)
+ifneq ($(wildcard $(DEVKITPRO)/portlibs/ppc/lib/libfaad.a),)
+LIBS	:=	-lfaad $(LIBS)
+endif
 LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/libwiiuupdate $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
 			$(CURDIR)/portlibs/ntfs $(CURDIR)/portlibs/ext4 $(PORTLIBS) $(WUT_ROOT)
 

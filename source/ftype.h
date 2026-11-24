@@ -12,10 +12,10 @@
 typedef enum {
     FT_NONE,
     FT_STREAM,          /* BRSTM / BCSTM / BFSTM, BRWAV / BCWAV / BFWAV, BNS, AST, DSP, BTSND, SFX */
-    FT_AUDIO,           /* WAV, AIFF, MP3, FLAC, Ogg Vorbis */
+    FT_AUDIO,           /* WAV, AIFF, MP3, FLAC, Ogg Vorbis, M4A (AAC) */
     FT_MIDI,            /* standard MIDI, RIFF RMID */
     FT_SEQ,             /* RSEQ in a BRSAR, FSEQ in a BFSAR */
-    FT_VIDEO,           /* Mobiclip (MOC5), THP, Flipnote PPM / KWZ */
+    FT_VIDEO,           /* Mobiclip (MOC5), THP, Flipnote PPM / KWZ, Motion-JPEG AVI / MOV */
     /* TPL, TEX0, PLT0, BRFNT / BRFNA, BREFT, PNG, JPEG, WebP, AJPG, banners, BTI, TXTR, DKZ,
      * Monster Games TEX / ART / IMG / TM0; Wii U GTX, BFLIM, BFFNT, BFRES, NUT, DDS, Tropical TXTR */
     FT_IMAGE,
@@ -34,6 +34,8 @@ typedef enum {
 
 /* From the first bytes of a file (n of them, 0x40 is enough), its size and its name. */
 ftype_t ftype_sniff(const u8 *head, u32 n, u64 size, const char *name);
+/* The magic of an AVI or QuickTime file (the Motion-JPEG player opens it, or says it can't). */
+bool ftype_is_mjpeg(const u8 *head, u32 n);
 /* Reads the start of the file at path. FT_NONE for directories and unreadable files. */
 ftype_t ftype_detect(const char *path);
 

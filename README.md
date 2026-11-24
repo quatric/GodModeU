@@ -310,7 +310,7 @@ These need the Wii's IOS or hardware, or GX, and have no equivalent in a native 
 You need [devkitPro](https://devkitpro.org/) with devkitPPC and wut, plus these portlibs:
 
 ```sh
-dkp-pacman -S wut wut-tools ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-libvorbisidec ppc-libogg ppc-bzip2 ppc-zlib
+dkp-pacman -S wut wut-tools ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-libvorbisidec ppc-libogg ppc-bzip2 ppc-zlib ppc-faad2
 git submodule update --init --recursive
 ./scripts/build_libmocha.sh   # builds libmocha, libdvm, libntfs and lwext4 into ./portlibs, once each
 ./scripts/build_libdvm.sh
