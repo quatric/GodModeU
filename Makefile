@@ -19,7 +19,7 @@ include $(WUT_ROOT)/share/wut_rules
 TARGET		:=	GodModeU
 BUILD		:=	build
 UNARR		:=	source/unarr source/unarr/common source/unarr/zip source/unarr/rar source/unarr/_7z source/unarr/lzmasdk
-SOURCES		:=	source source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg $(UNARR)
+SOURCES		:=	source source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg libwiiuir/source $(UNARR)
 DATA		:=	res
 # source/compat holds the few libogc header names the shared GodModeWii code includes, mapped onto
 # Cafe OS (source/wiiu does the work behind them).
@@ -37,7 +37,7 @@ LIBS	:=	-linput-wiiu -lext4 -lntfs -ldvm -lmocha -lpng16 -ljpeg -lwebp -lsharpyu
 ifneq ($(wildcard $(DEVKITPRO)/portlibs/ppc/lib/libfaad.a),)
 LIBS	:=	-lfaad $(LIBS)
 endif
-LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/libwiiuupdate $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
+LIBDIRS	:=	$(CURDIR)/libwiiuinput $(CURDIR)/libwiiuupdate $(CURDIR)/libwiiuir $(CURDIR)/portlibs/mocha $(CURDIR)/portlibs/dvm \
 			$(CURDIR)/portlibs/ntfs $(CURDIR)/portlibs/ext4 $(PORTLIBS) $(WUT_ROOT)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))

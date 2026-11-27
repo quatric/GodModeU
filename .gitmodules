@@ -4,3 +4,6 @@
 [submodule "libwiiuupdate"]
 	path = libwiiuupdate
 	url = https://github.com/quatric/libwiiuupdate.git
+[submodule "libwiiuir"]
+	path = libwiiuir
+	url = https://github.com/quatric/libwiiuir.git

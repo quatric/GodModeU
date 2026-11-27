@@ -17,6 +17,7 @@
 #include "input.h"
 #include "vfs.h"
 #include "risk.h"
+#include "irremote.h"
 #include "ftp.h"
 #include "sfx.h"
 #include "colors.h"
@@ -67,6 +68,10 @@ int main(int argc, char **argv)
             ui_message("RISKY MODE OFF", C_GREEN, "Dangerous permissions are no longer forced. Risky changes ask for the warning and code again.");
     }
     /* already forced on from an earlier start: no dialog again (it was shown when it was turned on) */
+
+    /* 1 (Y on the GamePad and other pads) held while starting: straight to the IR remote */
+    if (irremote_shortcut_held())
+        irremote_run(true);
 
     int mode = app_run();
 

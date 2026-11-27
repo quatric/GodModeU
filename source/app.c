@@ -24,6 +24,7 @@
 #include "databin.h"
 #include "editor.h"
 #include "risk.h"
+#include "irremote.h"
 #include "mii.h"
 #include "miiu.h"
 #include "wfskeys.h"
@@ -1303,6 +1304,7 @@ static bool system_menu(void)
         M_KEYS,
         M_DRAW,
         M_MEMOS,
+        M_IR,
         M_SFX,
         M_LIGHT,
         M_ALARM,
@@ -1326,8 +1328,8 @@ static bool system_menu(void)
             draw_home();
 
         char theme_item[48];
-        const char *items[26];
-        int code[26];
+        const char *items[28];
+        int code[28];
         int n = 0;
 
         if (risk_any_unlocked() && !risk_forced()) {
@@ -1346,6 +1348,7 @@ static bool system_menu(void)
         items[n] = "Save Wii U keys for GodModeWii";                    code[n++] = M_KEYS;
         items[n] = "Sketchpad (draw)";                                  code[n++] = M_DRAW;
         items[n] = "Voice memos (record / play)";                       code[n++] = M_MEMOS;
+        items[n] = "IR remote (TV / AV control, from the GamePad)";     code[n++] = M_IR;
         items[n] = sfx_enabled() ? "Sound effects: ON (select to turn off)"
                                  : "Sound effects: OFF (select to turn on)";
                                                                         code[n++] = M_SFX;
@@ -1415,6 +1418,10 @@ static bool system_menu(void)
             return false;
         case M_MEMOS:
             memo_run();
+            reload_keep_safe();
+            return false;
+        case M_IR:
+            irremote_run(false);
             reload_keep_safe();
             return false;
         case M_SFX:
