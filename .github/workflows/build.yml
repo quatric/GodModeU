@@ -58,7 +58,7 @@ jobs:
       - name: Build
         run: make
 
-      - name: Build the IR remote list (irdb.xml) from Flipper-IRDB
+      - name: Build the IR remote list (irdb.dat) from Flipper-IRDB
         run: |
           git clone -q --depth 1 https://github.com/Lucaslhm/Flipper-IRDB irdb-src
           make -C libwiiuir irdb IRDB=$PWD/irdb-src
@@ -66,7 +66,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/GodModeU
-          cp libwiiuir/irdb.xml libwiiuir/irdb_converted.xml dist/GodModeU/
+          cp libwiiuir/irdb.dat dist/GodModeU/
           cp GodModeU.rpx dist/GodModeU/
           cp apps/GodModeU/meta.xml apps/GodModeU/icon.png dist/GodModeU/
           cp README.md LICENSE dist/GodModeU/
@@ -75,7 +75,7 @@ jobs:
           # The layout the app's built-in updater (libwiiuupdate) unpacks: wiiu/apps/<Name>/ with the Aroma bundle.
           mkdir -p wup/wiiu/apps/GodModeU
           cp GodModeU.wuhb README.md LICENSE wup/wiiu/apps/GodModeU/
-          cp libwiiuir/irdb.xml libwiiuir/irdb_converted.xml wup/wiiu/apps/GodModeU/
+          cp libwiiuir/irdb.dat wup/wiiu/apps/GodModeU/
           (cd wup && zip -qr ../GodModeU-WUP.zip wiiu)
 
       - uses: actions/upload-artifact@v4

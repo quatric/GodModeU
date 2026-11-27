@@ -274,16 +274,16 @@ images.
 HOME menu → *IR remote* sends TV, receiver, set-top box (and fan, AC, projector...) codes from the GamePad's IR window, the one
 its TV remote uses.
 
-* **New preset** picks a device from `irdb.xml` ([Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB)'s remotes, by
-  category and manufacturer; *Converted* opens 6,900 more from `irdb_converted.xml`), then each of its buttons gets a button on
+* **New preset** picks a device from `irdb.dat` (all 8,900 of [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB)'s remotes,
+  by category and manufacturer), then each of its buttons gets a button on
   any controller: the GamePad, a Wii Remote, Nunchuk, Classic, Pro Controller, GameCube adapter port or USB pad, each by its
   own buttons. **Send it now** tries a code.
 * In the remote, a mapped button sends its code and repeats it while held. **HOME + Left / Right** switches preset, and the
   controller buzzes once per preset number, so you can change it with the TV on another input. **HOME** on its own leaves.
 * Presets can be renamed, moved and deleted, and are saved in `wiiu/apps/GodModeU/ir_presets.txt`.
 * Hold **Y** on the GamePad (1 on a Wii Remote) while GodModeU starts to go straight to the remote.
-* Your own devices and buttons go in `wiiu/apps/GodModeU/irdb_custom.xml`, in the same format as `irdb.xml`; updates never
-  replace it. No sounds play in the remote.
+* Your own devices and buttons go in `wiiu/apps/GodModeU/irdb_custom.xml`, made on first use with commented examples
+  to copy; updates never replace it. No sounds play in the remote.
 
 ## FTP server
 
@@ -358,7 +358,7 @@ clock, calendar, calculator and alarm follow its own.
   * after snes9xgx's Wii U driver (Daryl Borth) and RiftWii's GameCube adapter code
 * [libwiiuir](https://github.com/quatric/libwiiuir) (quatric, Apache-2.0): the IR remote, based on
   [WiiIR](https://github.com/dakotath/WiiIR) by Dakota Thorpe (used with permission), and its `irdb.xml` schema
-* [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB) (CC0): the IR remote's devices, packed as `irdb.xml` when a release is built
+* [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
 * [libwiiuupdate](https://github.com/quatric/libwiiuupdate) (quatric): checks GitHub for a newer release at start and installs it in place
 * [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
 * [wii-mobiclip-player](https://github.com/quatric/wii-mobiclip-player) (quatric, MIT): the Mobiclip, THP and Flipnote players
