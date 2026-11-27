@@ -287,7 +287,7 @@ its TV remote uses.
 
 ## FTP server
 
-HOME menu → *FTP server (read-only)* or *(read/write)* shows the address, the user name (`godmode`) and a random password.
+HOME menu → *FTP server* → *Read-only* or *Read/write* shows the address, the user name (`godmode`) and a random password.
 Connect with any FTP client. Every drive appears as a folder (`/sd`, `/usb1`, `/mlc`, `/nand`, `/slc`...).
 
 * It listens on port 21, or **2121** if Aroma's ftpiiu already uses 21.
@@ -299,7 +299,7 @@ Connect with any FTP client. Every drive appears as a folder (`/sd`, `/usb1`, `/
 * `RMD` only removes empty folders, so nothing is deleted recursively over the network.
 * FTP bounce is blocked: `PORT` must point back at the client, and passive connections must come from the client's address.
 
-The **FTP install server** unpacks uploaded `.zip`, `.7z` and `.rar` files onto the SD card or the first USB drive.
+The **FTP install server** (HOME menu → *FTP server* → *Install server*) unpacks uploaded `.zip`, `.7z` and `.rar` files onto the SD card or the first USB drive.
 
 ## Not yet tested
 
