@@ -194,8 +194,7 @@ static bool wad_open(wad_t *w, const src_t *f, w2b_result_t *r)
         return false;
     }
     uint8_t ck[16], tk[16], iv[16] = { 0 };
-    int idx = w->tik[tb + 0xB1];
-    if (idx > 2) idx = 0;               /* a bogus index (0x35, 0xF6, ... seen in the wild) means the regular key */
+    int idx = arc_key_index(w->tik + tb, w->tik[tb + 0xB1]);   /* a bogus index (0x35, 0xF6...): the regular key */
     if (!arc_common_key(idx, ck)) {
         err(r, "The ticket uses an unknown common key");
         return false;

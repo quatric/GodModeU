@@ -84,6 +84,10 @@ controllers, keyboards and mice. They can be plugged in at any time.
 * Disk usage
 * Text viewer and hex viewer
 * In-place text and hex editors
+* Hex compare against the copied file (the differing bytes in red), replace a file with the copied one, or inject it at an offset
+* Title info for Wii U and Wii TMDs and tickets, WADs and NAND titles: title ID, version, region, contents and signatures
+* Development console (RVT) WADs and discs open with the dev common key
+* WBFS drives and images open as folders of games, and a USB drive that isn't FAT can be formatted as FAT32 from the HOME menu
 * Protected drives locked behind a Konami code, each with its own code
 * Forced risky mode, switched on or off with the Konami code on the logo screen
 

@@ -20,6 +20,7 @@
 #include "rvz.h"
 
 bool arc_common_key(int index, uint8_t key[16]);
+int arc_key_index(const uint8_t *issuer, int idx);
 
 #define WII_MAGIC   0x5D1C9EA3u
 #define GC_MAGIC    0xC2339F3Du
@@ -371,7 +372,7 @@ static bool open_wii(archive_t *a, disc_t *d)
                     }
             } else if (p->encrypted) {
                 uint8_t ck[16], iv[16] = { 0 }, tk[16];
-                if (!arc_common_key(ph[0x1F1], ck)) {
+                if (!arc_common_key(arc_key_index(ph + 0x140, ph[0x1F1]), ck)) {
                     d->nparts--;
                     continue;
                 }

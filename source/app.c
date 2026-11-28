@@ -19,6 +19,7 @@
 #include "clock.h"
 #include "vfs.h"
 #include "fat32fmt.h"
+#include "filetools.h"
 #include "ops.h"
 #include "waddump.h"
 #include "wadinstall.h"
@@ -994,6 +995,10 @@ enum {
     A_NONE,
     A_INVERT,
     A_REFRESH,
+    A_COMPARE,
+    A_REPLACE,
+    A_INJECT,
+    A_TITLEINFO,
     A_COUNT
 };
 
@@ -1141,6 +1146,28 @@ static void actions_menu(void)
     en[n] = on_entry && !nmarks && !ents[e].is_dir;
     code[n++] = A_HEX;
 
+    /* with one copied file on the clipboard: compare / replace / inject against this one */
+    bool clip_file = false;
+    if (clip_n == 1) { bool d; clip_file = vfs_stat(clip[0], &d, NULL) && !d; }
+    if (clip_file && on_entry && !nmarks && !ents[e].is_dir) {
+        items[n] = "Compare with the copied file (hex)";
+        en[n] = true;
+        code[n++] = A_COMPARE;
+        items[n] = "Replace this with the copied file";
+        en[n] = !ro && !card;
+        code[n++] = A_REPLACE;
+        items[n] = "Inject the copied file at an offset";
+        en[n] = !ro && !card;
+        code[n++] = A_INJECT;
+    }
+    char here_path[VFS_PATH_MAX] = "";
+    if (on_entry && !nmarks) vfs_join(here_path, sizeof(here_path), cwd, ents[e].name);
+    if ((here_path[0] && titleinfo_can(here_path)) || titleinfo_can(cwd)) {
+        items[n] = "Title info (TMD / ticket)";
+        en[n] = true;
+        code[n++] = A_TITLEINFO;
+    }
+
     items[n] = "Edit as text";
     en[n] = on_entry && !nmarks && !ro && !card && !ents[e].is_dir;
     code[n++] = A_EDIT_TEXT;
@@ -1242,6 +1269,18 @@ static void actions_menu(void)
     case A_USAGE:
         usage_browse(cwd);
         reload_keep();
+        break;
+    case A_COMPARE:
+    case A_REPLACE:
+    case A_INJECT: {
+        char p[VFS_PATH_MAX];
+        if (!vfs_join(p, sizeof(p), cwd, ents[e].name)) break;
+        if (code[r] == A_COMPARE) hexcompare(p, clip[0]);
+        else if (code[r] == A_REPLACE ? file_replace(p, clip[0]) : file_inject(p, clip[0])) reload_keep();
+        break;
+    }
+    case A_TITLEINFO:
+        titleinfo_show(here_path[0] && titleinfo_can(here_path) ? here_path : cwd);
         break;
     case A_HEX:
         tp = targets(&t);
