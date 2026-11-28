@@ -246,6 +246,9 @@ The details of each are below, and in [docs/FORMATS.md](docs/FORMATS.md).
 * **WUD / WUX install:** with no `game.key` or `<image name>.key` beside the image, GodModeU asks for the disc key (32 hex
   digits) and saves it next to the image.
 * **Find files** (Actions): every name under the folder that has the text in it, any case, `*` and `?` as wildcards.
+* **Mail:** a MIME message (Wii Message Board mail, an `.eml` / `.msg`, or any file that starts with mail headers) opens in
+  the text viewer as its From / To / Date / Subject and its decoded text (base64 or quoted-printable; UTF-8, UTF-16 or
+  Latin-1; HTML without its tags), with its attachments listed.
 * **Screensaver:** after a few idle minutes (Settings), or now from Settings; the screen comes back as it was.
 
 ## Installing Wii U titles
@@ -388,63 +391,63 @@ GodModeU stands on a lot of other people's work. Thank you!
 
 **Code included**
 
+* [dr_libs](https://github.com/mackron/dr_libs) (David Reid): WAV, MP3 and FLAC decoding
+  * [minimp3](https://github.com/lieff/minimp3) (lieff)
 * [GodModeWii](https://github.com/quatric/GodModeWii) (quatric & cmyksoda): the code this port is made of, and all its credits
-* [MoonShell](https://www.gamebrew.org/wiki/Moonshell) (Moonlight): the interface sound effects
-* TiVo: the easter-egg interface sounds (`res/tivo.bin`). The last credits page has a hint, and the code also works on the drive list.
+* [libdvm](https://github.com/devkitPro/libdvm) (fincs / devkitPro) with [FatFs](https://github.com/devkitPro/fatfs-mod) (ChaN): FAT32 and exFAT drives
+* [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
+* [libntfs](https://github.com/extremscorner/libntfs) (Extrems) on NTFS-3G (Tuxera and the NTFS-3G authors): NTFS drives
+* libpng, libjpeg-turbo, libwebp, zlib, bzip2 and libogg (devkitPro portlibs); zlib's deflate also makes the zips
 * [libwiiuinput](https://github.com/quatric/libwiiuinput) (quatric): every controller
   * after snes9xgx's Wii U driver (Daryl Borth) and RiftWii's GameCube adapter code
 * [libwiiuir](https://github.com/quatric/libwiiuir) (quatric, Apache-2.0): the IR remote, based on
   [WiiIR](https://github.com/dakotath/WiiIR), SingIR and OptimizeIR by Dakota Thorpe (used with permission): its `irdb.xml`
   schema, and OptimizeIR's whole-cycle marks on an absolute timeline for the GamePad's IR LED
-* [Logitech Harmony IR archive](https://github.com/pickysysadmin/logitech-harmony-ir-archive) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
 * [libwiiuupdate](https://github.com/quatric/libwiiuupdate) (quatric): checks GitHub for a newer release at start and installs it in place
-* [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
+* [Logitech Harmony IR archive](https://github.com/pickysysadmin/logitech-harmony-ir-archive) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
+* [lwext4](https://github.com/gkostka/lwext4) (Grzegorz Kostka; Extrems' big-endian fork) and Extrems' libdvm ext4 driver: ext2/3/4 drives
+* [MoonShell](https://www.gamebrew.org/wiki/Moonshell) (Moonlight): the interface sound effects
+* [TinySoundFont](https://github.com/schellingb/TinySoundFont) (Bernhard Schelling): MIDI playback
+  * [SFZero](https://github.com/stevefolta/SFZero) (Steve Folta)
+* TiVo: the easter-egg interface sounds (`res/tivo.bin`). The last credits page has a hint, and the code also works on the drive list.
+* [unarr](https://github.com/selmf/unarr) (selmf and contributors, LGPL-3.0): zip, 7z and RAR readers
+  * LZMA SDK (Igor Pavlov) and The Unarchiver's XADMaster code
 * [wii-mobiclip-player](https://github.com/quatric/wii-mobiclip-player) (quatric, MIT): the Mobiclip, THP and Flipnote players
   * FFmpeg's Mobiclip decoder (Florian Nouwt, Adib Surani, Paul B Mahol; LGPL 2.1+)
   * NanoJPEG (Martin J. Fiedler) and Tremor
-* [TinySoundFont](https://github.com/schellingb/TinySoundFont) (Bernhard Schelling): MIDI playback
-  * [SFZero](https://github.com/stevefolta/SFZero) (Steve Folta)
-* [dr_libs](https://github.com/mackron/dr_libs) (David Reid): WAV, MP3 and FLAC decoding
-  * [minimp3](https://github.com/lieff/minimp3) (lieff)
-* [Zstandard](https://github.com/facebook/zstd) (Meta): RVZ decoding, with xxHash and Finite State Entropy (Yann Collet)
-* [unarr](https://github.com/selmf/unarr) (selmf and contributors, LGPL-3.0): zip, 7z and RAR readers
-  * LZMA SDK (Igor Pavlov) and The Unarchiver's XADMaster code
-* [lwext4](https://github.com/gkostka/lwext4) (Grzegorz Kostka; Extrems' big-endian fork) and Extrems' libdvm ext4 driver: ext2/3/4 drives
-* [libntfs](https://github.com/extremscorner/libntfs) (Extrems) on NTFS-3G (Tuxera and the NTFS-3G authors): NTFS drives
-* [libdvm](https://github.com/devkitPro/libdvm) (fincs / devkitPro) with [FatFs](https://github.com/devkitPro/fatfs-mod) (ChaN): FAT32 and exFAT drives
 * [wut](https://github.com/devkitPro/wut) and devkitPPC (devkitPro): the toolchain and the Cafe OS libraries
-* libpng, libjpeg-turbo, libwebp, zlib, bzip2 and libogg (devkitPro portlibs); zlib's deflate also makes the zips
+* [Zstandard](https://github.com/facebook/zstd) (Meta): RVZ decoding, with xxHash and Finite State Entropy (Yann Collet)
 
 **Formats and references**
 
-* [nintoolbox](https://github.com/quatric/nintoolbox) (quatric): file type detection and the Wii U format readers
-  * GX2 tiling after aboood40091's addrlib.py, and decaf-emu's AddrLib
-  * BFRES, GTX, BFLIM, BFFNT, SARC, BFSAR, BARS, NUS3AUDIO, BYML, XMB, AAMP, BFLYT
-* [mobipeg](https://github.com/quatric/mobipeg) (quatric): the audio and texture formats, and the AJPG / ODH codec
-* [VGMTrans](https://github.com/vgmtrans/vgmtrans): the RSEQ sequence layouts
-* [RiftWii](https://github.com/KakarottoCake/RiftWii) (KakarottoCake) and Dolphin's format description: the RVZ / WIA reader
-* [lzo](https://www.oberhumer.com/opensource/lzo/) / lzop (Markus Oberhumer): LZO1X
-* [wfslib / wfs-tools](https://github.com/koolkdev/wfs-tools) (koolkdev): the WFS layout
-* [WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2) (Dimok, Crediar, FIX94, xhp-creations; the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages
-* [wud2app](https://github.com/FIX94/wud2app) (FIX94, MIT) and JWUDTool (Maschell): the WUD layout and how it becomes a WUP folder
 * [dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter) and [wad2bin](https://github.com/DarkMatterCore/wad2bin) (DarkMatterCore): the split DLC WAD layout, and finding the contents of a partial DLC WAD
-* [MiiKit](https://github.com/cmyksoda/MiiKit) (cmyksoda; public domain, CC0): the Mii database and Mii Parade reader (`source/rfl/rflkit.c`)
-* [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (Project Nayuki, MIT): the Mii QR codes
-* [MII-FLOOD-2](https://github.com/fartbumpoopturd-bit/MII-FLOOD-2): the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
+* [hbl2hbc](https://github.com/FIX94/hbl2hbc) (FIX94): vWii channels started without Nintendo's prompts
 * [jaames' mii-qr.py](https://gist.github.com/jaames/96ce8daa11b61b758b6b0227b55f9f78): how the 3DS / Wii U Mii QR code is
   encrypted; [3dbrew](https://www.3dbrew.org/wiki/Mii): their Mii format; [MiiJS](https://www.npmjs.com/package/miijs)
   (Stewared, ISC): the Wii to 3DS face features
-* [hbl2hbc](https://github.com/FIX94/hbl2hbc) (FIX94): vWii channels started without Nintendo's prompts
+* [libwbfs](https://github.com/kwiirk/wbfs) (Kwiirk, Waninkoko and others): the WBFS layout, read by GodModeU's own code
+* [lzo](https://www.oberhumer.com/opensource/lzo/) / lzop (Markus Oberhumer): LZO1X
+* [MII-FLOOD-2](https://github.com/fartbumpoopturd-bit/MII-FLOOD-2): the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
+* [MiiKit](https://github.com/cmyksoda/MiiKit) (cmyksoda; public domain, CC0): the Mii database and Mii Parade reader (`source/rfl/rflkit.c`)
+* [mobipeg](https://github.com/quatric/mobipeg) (quatric): the audio and texture formats, and the AJPG / ODH codec
+* [nanddumper](https://github.com/GaryOderNichts/nanddumper) (GaryOderNichts) and [wiiu.hacks.guide](https://wiiu.hacks.guide/): the NAND backup steps
+* [nintoolbox](https://github.com/quatric/nintoolbox) (quatric): file type detection and the Wii U format readers
+  * GX2 tiling after aboood40091's addrlib.py, and decaf-emu's AddrLib
+  * BFRES, GTX, BFLIM, BFFNT, SARC, BFSAR, BARS, NUS3AUDIO, BYML, XMB, AAMP, BFLYT
+* [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (Project Nayuki, MIT): the Mii QR codes
+* [RiftWii](https://github.com/KakarottoCake/RiftWii) (KakarottoCake) and Dolphin's format description: the RVZ / WIA reader
 * [RPXLoader](https://github.com/wiiu-env/RPXLoader) (Maschell): Wii U homebrew started from the app, through its module's
   own `RL_LaunchHomebrew` export
-* [libwbfs](https://github.com/kwiirk/wbfs) (Kwiirk, Waninkoko and others): the WBFS layout, read by GodModeU's own code
 * RVT2RVL and WiiBrew's key list: the development console common key for RVT WADs and discs
 * ShowMiiWads (Leathl) and NUSD: what the title info screen lists for TMDs and tickets
-* [nanddumper](https://github.com/GaryOderNichts/nanddumper) (GaryOderNichts) and [wiiu.hacks.guide](https://wiiu.hacks.guide/): the NAND backup steps
+* [VGMTrans](https://github.com/vgmtrans/vgmtrans): the RSEQ sequence layouts
+* [wfslib / wfs-tools](https://github.com/koolkdev/wfs-tools) (koolkdev): the WFS layout
+* [wud2app](https://github.com/FIX94/wud2app) (FIX94, MIT) and JWUDTool (Maschell): the WUD layout and how it becomes a WUP folder
+* [WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2) (Dimok, Crediar, FIX94, xhp-creations; the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages
 
 **Inspiration**
 
+* [ftpii](https://code.google.com/p/ftpii/source/list) (Joseph Jordan and contributors): the FTP idea
 * [GodMode9](https://github.com/d0k3/GodMode9) (d0k3) and [GodMode9i](https://github.com/DS-Homebrew/GodMode9i) (DS-Homebrew): the look, feel and workflow, and the write permission colours
 * MoonCalc and Morning Timer (for MoonShell): the calculator and the alarm
-* [ftpii](https://code.google.com/p/ftpii/source/list) (Joseph Jordan and contributors): the FTP idea
 * [WiiXplorer](https://github.com/niuus/wiixplorer) (Dimok, niuus and contributors): the file manager reference

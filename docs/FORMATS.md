@@ -10,22 +10,22 @@ These open like folders.
 
 | Format | What you see |
 | --- | --- |
-| SARC (`.sarc`, `.pack`, `.szs`) | Its files. `.szs` is Yaz0-compressed SARC and is unpacked first. |
+| BARS | Each asset's FWAV / FSTP, named from its AMTA. |
 | BFSAR | Every internal file, named after its sound, bank, wave archive or group. A *Sequences* folder holds sequences that play with their bank and waves. An *External* folder holds the streams it names that sit in files next to it. |
 | BFWAR | Its waves. |
-| BARS | Each asset's FWAV / FSTP, named from its AMTA. |
 | NUS3AUDIO | Its tracks. |
+| SARC (`.sarc`, `.pack`, `.szs`) | Its files. `.szs` is Yaz0-compressed SARC and is unpacked first. |
 
 ## Images
 
 | Format | Notes |
 | --- | --- |
-| GTX | Every texture in the file. |
-| BFLIM | Luminance and alpha formats (L8, A8, LA8, BC4, BC5) show as grey, alpha or grey + alpha, as the console reads them. |
 | BFFNT | The glyph sheets. |
+| BFLIM | Luminance and alpha formats (L8, A8, LA8, BC4, BC5) show as grey, alpha or grey + alpha, as the console reads them. |
 | BFRES | Its FTEX textures. A BFRES with no model opens here. |
-| NUT | Smash Bros. for Wii U. |
 | DDS | |
+| GTX | Every texture in the file. |
+| NUT | Smash Bros. for Wii U. |
 | TXTR | Retro Studios' Wii U format (Donkey Kong Country: Tropical Freeze). LZSS or zlib buffers. |
 
 All GX2 tile modes work (linear, 1D, and 2D / 2B macro tiling with pipe and bank swizzle). So do the formats: R8 to
@@ -66,12 +66,12 @@ BNSF tracks in a NUS3AUDIO are listed but not played.
 
 | Format | Shown as |
 | --- | --- |
+| AAMP parameter files, BGLPBD light probes | Lists, objects and values |
+| BFLAN | The tag, its groups, and what each pane / material animates |
+| BFLYT | Textures, fonts, materials, and the pane tree with positions, sizes and texts |
+| BFSEQ | Its labels, when it isn't inside a BFSAR |
 | BYAML / BYML (v1 to v4) | A YAML-style tree |
 | XMB (Smash Bros.) | Elements and attributes |
-| AAMP parameter files, BGLPBD light probes | Lists, objects and values |
-| BFLYT | Textures, fonts, materials, and the pane tree with positions, sizes and texts |
-| BFLAN | The tag, its groups, and what each pane / material animates |
-| BFSEQ | Its labels, when it isn't inside a BFSAR |
 
 ## Disc images
 
