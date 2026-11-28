@@ -19,14 +19,14 @@ include $(WUT_ROOT)/share/wut_rules
 TARGET		:=	GodModeU
 BUILD		:=	build
 UNARR		:=	source/unarr source/unarr/common source/unarr/zip source/unarr/rar source/unarr/_7z source/unarr/lzmasdk
-SOURCES		:=	source source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg libwiiuir/source $(UNARR)
+SOURCES		:=	source source/rfl source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg libwiiuir/source $(UNARR)
 DATA		:=	res
 # source/compat holds the few libogc header names the shared GodModeWii code includes, mapped onto
 # Cafe OS (source/wiiu does the work behind them).
 INCLUDES	:=	source source/compat source/wiiu source/wiiufmt source/mobiclip source/zstd source/ajpg $(UNARR)
 
 # libwiiuinput: every controller, pen tablets / uDraw (drawing) and microphones (voice memos).
-CFLAGS	= -g -O2 -Wall -Wno-unused-function $(MACHDEP) $(INCLUDE) -D__WIIU__ -DGMU -DHAVE_7Z -DHAVE_TABLET -DHAVE_MIC
+CFLAGS	= -g -O2 -Wall -Wno-unused-function $(MACHDEP) $(INCLUDE) -D__WIIU__ -DGMU -DMII_NO_OGC -DHAVE_7Z -DHAVE_TABLET -DHAVE_MIC
 CXXFLAGS	=	$(CFLAGS) -std=gnu++17 -fno-exceptions -fno-rtti
 LDFLAGS	=	-g $(RPXSPECS) $(MACHDEP) -Wl,-Map,$(notdir $*.map)
 

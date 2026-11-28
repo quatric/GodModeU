@@ -75,6 +75,10 @@ u32 ui_hint_under(void);
 
 /* The console's framebuffer (YUY2, 2 bytes per pixel), for the image viewer. */
 void *ui_framebuffer(int *w, int *h);
+/* An RGBA picture blended onto the screen at pixel (x, y), each pixel scale x scale. */
+void ui_blit_rgba(int x, int y, const u8 *rgba, int w, int h, int scale);
+/* The screen as GodModeU/screenshots/shot_NNN.png (1 and 2, or Y and X, together); the file's path in out. */
+bool ui_screenshot(char *out, size_t n);
 
 #ifdef GMW_AUTOTEST
 /* Test builds only: saves the framebuffer as sd:/shot_N.yuv (YUY2) and says the viewer should

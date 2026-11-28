@@ -50,7 +50,7 @@ int main(int argc, char **argv)
     ui_splash("Looking for drives...");
     uint64_t began = OSTicksToMilliseconds(OSGetSystemTime());
     vfs_init();
-    bool toggled = risk_startup_poll(2500, began);
+    bool toggled = risk_startup_poll(2000, began);
     risk_load_forced();
     sfx_load_setting();
     colors_load();

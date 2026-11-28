@@ -64,10 +64,23 @@ alone. Remount drives from the HOME menu after plugging one in or out.
 | **-** | Cut the marked items |
 | **HOME** | HOME menu (HOME or B closes it) |
 | Touch screen | Tap to point (a tap is **A**) |
+| **Y** + **X** together (Wii Remote **1** + **2**) | Screenshot, saved as `GodModeU/screenshots/shot_NNN.png` |
 
 Every controller [libwiiuinput](https://github.com/quatric/libwiiuinput) reads works, with its buttons mapped to the Wii
 Remote's: GamePad, Wii Remotes (with Nunchuk or Classic Controller), Pro Controllers, the GameCube adapter, USB game
 controllers, keyboards and mice. They can be plugged in at any time.
+
+### Write permission levels
+
+Like GodMode9, the tag at the right of the top bar says what GodModeU is allowed to change. Only the tag takes the colour;
+the bar keeps your theme's.
+
+| Tag | Colour | Means |
+| --- | --- | --- |
+| `SAFE` | Green | Only the SD card and USB drives can be written |
+| `UNLOCKED` | Yellow | A protected drive (MLC, the vWii NAND...) was unlocked with the code and can be changed |
+| `CONSOLE DATA` | Magenta | Unlocked, and you're in console-unique data (the SLC, the SEEPROM, the keys, the vWii NAND's `/sys`) |
+| `FORCED` | Red | Risky Mode was forced on at start-up: nothing asks first |
 
 ## Features
 
@@ -179,6 +192,11 @@ and EPUB. On top of that, the Wii U formats:
 
 **HOME menu extras**
 
+The HOME menu is in groups, as GodModeWii's: drives and network, titles and saves, console and Miis, tools, settings, and
+exit and power.
+
+* Miis: the vWii's Mii Channel plaza and its Mii Parade (the Miis it has met), with name, creator, gender, birthday,
+  favourite colour, height and weight; **-** shows a Mii as a QR code of its 74 bytes, or saves the QR code as a PNG
 * Sketchpad
 * Voice memos
 * IR remote: TV, receiver and set-top box codes from the GamePad's IR window, on any controller's buttons, in named presets
@@ -367,7 +385,8 @@ clock, calendar, calculator and alarm follow its own.
 * [libwiiuinput](https://github.com/quatric/libwiiuinput) (quatric): every controller
   * after snes9xgx's Wii U driver (Daryl Borth) and RiftWii's GameCube adapter code
 * [libwiiuir](https://github.com/quatric/libwiiuir) (quatric, Apache-2.0): the IR remote, based on
-  [WiiIR](https://github.com/dakotath/WiiIR) by Dakota Thorpe (used with permission), and its `irdb.xml` schema
+  [WiiIR](https://github.com/dakotath/WiiIR), SingIR and OptimizeIR by Dakota Thorpe (used with permission): its `irdb.xml`
+  schema, and OptimizeIR's whole-cycle marks on an absolute timeline for the GamePad's IR LED
 * [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
 * [libwiiuupdate](https://github.com/quatric/libwiiuupdate) (quatric): checks GitHub for a newer release at start and installs it in place
 * [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
@@ -385,7 +404,7 @@ clock, calendar, calculator and alarm follow its own.
 * [libntfs](https://github.com/extremscorner/libntfs) (Extrems) on NTFS-3G (Tuxera and the NTFS-3G authors): NTFS drives
 * [libdvm](https://github.com/devkitPro/libdvm) (fincs / devkitPro) with [FatFs](https://github.com/devkitPro/fatfs-mod) (ChaN): FAT32 and exFAT drives
 * [wut](https://github.com/devkitPro/wut) and devkitPPC (devkitPro): the toolchain and the Cafe OS libraries
-* libpng, libjpeg-turbo, libwebp, zlib, bzip2 and libogg (devkitPro portlibs)
+* libpng, libjpeg-turbo, libwebp, zlib, bzip2 and libogg (devkitPro portlibs); zlib's deflate also makes the zips
 
 **Formats and references**
 
@@ -400,11 +419,17 @@ clock, calendar, calculator and alarm follow its own.
 * [WUP Installer GX2](https://github.com/xhp-creations/WUP-Installer-GX2) (Dimok, Crediar, FIX94, xhp-creations; the [WUHB fork](https://github.com/Fangal-Airbag/wup-installer-gx2) by Fangal-Airbag) and [WUP Installer Y Mod](https://github.com/Yardape8000/wupinstaller) (Yardape8000): the MCP install sequence and its error messages
 * [wud2app](https://github.com/FIX94/wud2app) (FIX94, MIT) and JWUDTool (Maschell): the WUD layout and how it becomes a WUP folder
 * [dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter) and [wad2bin](https://github.com/DarkMatterCore/wad2bin) (DarkMatterCore): the split DLC WAD layout, and finding the contents of a partial DLC WAD
+* [MiiKit](https://github.com/cmyksoda/MiiKit) (cmyksoda; public domain, CC0): the Mii database and Mii Parade reader (`source/rfl/rflkit.c`)
+* [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (Project Nayuki, MIT): the Mii QR codes
+* MiiFlood: the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
+* [libwbfs](https://github.com/kwiirk/wbfs) (Kwiirk, Waninkoko and others): the WBFS layout, read by GodModeU's own code
+* RVT2RVL and WiiBrew's key list: the development console common key for RVT WADs and discs
+* ShowMiiWads (Leathl) and NUSD: what the title info screen lists for TMDs and tickets
 * [nanddumper](https://github.com/GaryOderNichts/nanddumper) (GaryOderNichts) and [wiiu.hacks.guide](https://wiiu.hacks.guide/): the NAND backup steps
 
 **Inspiration**
 
-* [GodMode9](https://github.com/d0k3/GodMode9) (d0k3) and [GodMode9i](https://github.com/DS-Homebrew/GodMode9i) (DS-Homebrew): the look, feel and workflow
+* [GodMode9](https://github.com/d0k3/GodMode9) (d0k3) and [GodMode9i](https://github.com/DS-Homebrew/GodMode9i) (DS-Homebrew): the look, feel and workflow, and the write permission colours
 * MoonCalc and Morning Timer (for MoonShell): the calculator and the alarm
 * [ftpii](https://code.google.com/p/ftpii/source/list) (Joseph Jordan and contributors): the FTP idea
 * [WiiXplorer](https://github.com/niuus/wiixplorer) (Dimok, niuus and contributors): the file manager reference

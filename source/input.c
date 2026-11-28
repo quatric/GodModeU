@@ -97,6 +97,26 @@ static bool aroma_combo(void)
     return combo;
 }
 
+/* 1 and 2 together (Y and X on the GamePad and other pads) save a screenshot. A lone 1 or 2 is held back a
+ * few frames in case the other one follows, then passed on as usual. */
+static u32 shot_combo(u32 down)
+{
+    static u32 pending;
+    static int age;
+    const u32 both = WPAD_BUTTON_1 | WPAD_BUTTON_2;
+    u32 now = (down & both) | pending;
+    down &= ~both;
+    if ((now & both) == both) {
+        pending = 0;
+        char path[300];
+        sfx_play(ui_screenshot(path, sizeof(path)) ? SFX_CLICK : SFX_LONGTAP);
+        return down;
+    }
+    if (now && !pending) { pending = now; age = 0; return down; }
+    if (pending && ++age >= 4) { down |= pending; pending = 0; }
+    return down;
+}
+
 static u32 detect(u8 DownOrHeld, bool wait)
 {
     ptr_overlay_update();                           /* an arrow taken away by a redraw is back before the next frame */
@@ -124,6 +144,7 @@ static u32 detect(u8 DownOrHeld, bool wait)
     if (DownOrHeld != IN_DOWN)
         return held_all();
     u32 down = INPUT_ButtonsDown() | (stick_now & ~stick_before);
+    down = shot_combo(down);
     /* a click on a footer hint ("B Stop") is that button */
     u32 hint = ui_hint_under();
     if (hint && ((down & WPAD_BUTTON_A) || (INPUT_MouseButtonsPressed() & INPUT_MOUSE_LEFT)))

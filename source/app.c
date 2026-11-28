@@ -200,19 +200,37 @@ static int clock_minute(char *out, size_t n)
     return tmv.tm_hour * 60 + tmv.tm_min;
 }
 
+/* Write permission levels, the GodMode9 way, shown by the colour of the tag on the right (the bar keeps the
+ * theme's colour):  green  SAFE: nothing internal can change;  yellow  UNLOCKED: an internal drive can;
+ * magenta  CONSOLE DATA: unlocked, and here is data only this console has (SLC, SEEPROM, keys, the vWii NAND's
+ * /sys and /shared2/sys);  red  FORCED: Risky Mode always on, nothing asks first. */
+static void level_tag(char *out, size_t n, int *color)
+{
+    int dev = cwd[0] ? vfs_dev_of(cwd) : -1;
+    bool unique = dev == DEV_SLC || dev == DEV_SEEPROM || dev == DEV_KEYS ||
+                  (dev == DEV_NAND && (strstr(cwd, ":/shared2/sys") || strstr(cwd, ":/sys")));
+    if (risk_forced())                     { snprintf(out, n, "[ FORCED ]");       *color = C_RED; }
+    else if (!risk_any_unlocked())         { snprintf(out, n, "[ SAFE ]");         *color = C_GREEN; }
+    else if (unique && here_risky())       { snprintf(out, n, "[ CONSOLE DATA ]"); *color = C_MAGENTA; }
+    else                                   { snprintf(out, n, "[ UNLOCKED ]");     *color = C_YELLOW; }
+}
+
 static void draw_header(void)
 {
     int cols = ui_cols();
-    char left[64], right[64], clk[12];
+    char left[64], tag[24], clk[12];
+    int tc;
     clock_minute(clk, sizeof(clk));
-    bool risky = here_risky();
+    level_tag(tag, sizeof(tag), &tc);
     snprintf(left, sizeof(left), " GodModeU v%s", GMW_VERSION);
-    snprintf(right, sizeof(right), "%s  %s ", risky ? "[ RISKY MODE ON ]" : "[ SAFE MODE ]", clk);
-    ui_bg(risky ? C_RED : C_BLUE);
-    ui_color(C_WHITE, true);
-    int gap = cols - 1 - (int)strlen(left) - (int)strlen(right);
+    int rlen = (int)strlen(tag) + 2 + (int)strlen(clk) + 1;
+    int gap = cols - 1 - (int)strlen(left) - rlen;
     if (gap < 1) gap = 1;
-    ui_field(0, 0, cols - 1, "%s%*s%s", left, gap, "", right);
+    ui_bg(C_BLUE);
+    ui_color(C_WHITE, true);
+    ui_field(0, 0, cols - 1, "%s%*s%*s  %s ", left, gap, "", (int)strlen(tag), "", clk);
+    ui_color(tc, true);
+    ui_field(0, cols - 1 - rlen, (int)strlen(tag), "%s", tag);
     ui_reset();
 }
 
@@ -752,6 +770,12 @@ static void show_credits(void)
         "Igor Pavlov); RAR5 from the public format description.\n\n"
         "RVZ / WIA: written from Dolphin's format description; Zstandard (Meta), bzip2. LZO1X and Retro Studios PAK layouts match nintoolbox; "
         "lzop by Markus Oberhumer. WFS: wfslib and wfs-tools (koolkdev).",
+
+        "IR remote: WiiIR, SingIR and OptimizeIR (Dakota Thorpe) through libwiiuir, out of the GamePad's IR LED; "
+        "Flipper-IRDB's remotes. Raw drive and disc access: libmocha (Maschell). WBFS: libwbfs (Kwiirk, Waninkoko). "
+        "Development console WADs: the dev common key, after RVT2RVL. Title info: after ShowMiiWads (Leathl) and NUSD. "
+        "Write permission colours: GodMode9. Zip: zlib.\n\n"
+        "Full list with licenses: README.",
 
         "MoonShell (Moonlight) inspired us a lot: the interface sounds are MoonShell 2.10's (GPL v2 or "
         "later), and the clock, calendar, calculator and alarm follow its own.\n\n"
@@ -1451,7 +1475,6 @@ static bool system_menu(void)
         M_MEMOS,
         M_IR,
         M_SFX,
-        M_LIGHT,
         M_ALARM,
         M_CALC,
         M_CLOCK,
@@ -1472,50 +1495,71 @@ static bool system_menu(void)
         else
             draw_home();
 
-        char theme_item[48];
-        const char *items[28];
-        int code[28];
-        int n = 0;
-
-        if (risk_any_unlocked() && !risk_forced()) {
-            items[n] = "Lock risky options again";
-            code[n++] = M_LOCK;
-        }
-
-        items[n] = "Remount drives (SD / USB / internal)";              code[n++] = M_REMOUNT;
-        items[n] = "Format a USB drive as FAT32";                       code[n++] = M_FORMAT;
-        items[n] = "FTP server";                                        code[n++] = M_FTP;
-        items[n] = "Wiiload (receive apps and files)";                  code[n++] = M_WIILOAD;
-        items[n] = "Miis";                                              code[n++] = M_MIIS;
-        items[n] = "Export Wii U Miis (.ffsd)";                         code[n++] = M_MIIU;
-        items[n] = "Save Wii U keys for GodModeWii";                    code[n++] = M_KEYS;
-        items[n] = "Sketchpad (draw)";                                  code[n++] = M_DRAW;
-        items[n] = "Voice memos (record / play)";                       code[n++] = M_MEMOS;
-        items[n] = "IR remote (TV / AV control, from the GamePad)";     code[n++] = M_IR;
-        items[n] = sfx_enabled() ? "Sound effects: ON (select to turn off)"
-                                 : "Sound effects: OFF (select to turn on)";
-                                                                        code[n++] = M_SFX;
-        items[n] = "Alarm clock";                                       code[n++] = M_ALARM;
-        items[n] = "Calculator";                                        code[n++] = M_CALC;
-        items[n] = "Clock and calendar";                                code[n++] = M_CLOCK;
-        snprintf(theme_item, sizeof(theme_item), "Theme: %s", colors_name(colors_current()));
-        items[n] = theme_item;                                          code[n++] = M_THEME;
-        items[n] = "Export all vWii saves";                             code[n++] = M_SAVES;
-        items[n] = "Back up the NAND / MLC (how to)";                   code[n++] = M_NAND;
-        items[n] = "Install Wii U titles (WUP / WUD help)";             code[n++] = M_WUPHELP;
-        items[n] = "About / credits";                                   code[n++] = M_ABOUT;
-        if (launched_from_hbl()) {
-            items[n] = "Exit to Homebrew Launcher";                     code[n++] = M_LOADER;
-        }
-        items[n] = "Exit to Wii U Menu";                                code[n++] = M_WIIMENU;
-        items[n] = "Restart console";                                   code[n++] = M_RESTART;
-        items[n] = "Power off";                                         code[n++] = M_POWER;
-
-        /* HOME closes the menu like the Wii's own HOME Menu; leaving is always an explicit
-         * choice. */
-        int r = ui_menu_ex("SYSTEM", items, NULL, n, 0, "A Select   B / HOME Back");
-        if (r < 0)
+        /* The HOME menu in groups, as GodModeWii's; B in a group goes back to the groups, B there closes the menu. */
+        static const char *const groups[] = {
+            "Drives and network", "Titles and saves", "Console and Miis", "Tools", "Settings", "Exit and power",
+        };
+        enum { G_DRIVES, G_TITLES, G_CONSOLE, G_TOOLS, G_SETTINGS, G_EXIT, G_COUNT };
+        const char *gitems[G_COUNT + 1];
+        int gn = 0, glock = -1;
+        if (risk_any_unlocked() && !risk_forced()) { glock = gn; gitems[gn++] = "Lock risky options again"; }
+        for (int g = 0; g < G_COUNT; g++) gitems[gn++] = groups[g];
+        int gr = ui_menu_ex("HOME", gitems, NULL, gn, 0, "A Open   B / HOME Back");
+        if (gr < 0)
             return false;
+        int g = gr == glock ? -1 : gr - (glock >= 0 ? 1 : 0);
+
+        char theme_item[48];
+        const char *items[16];
+        int code[16];
+        int n = 0;
+#define ITEM(text, c) do { items[n] = (text); code[n++] = (c); } while (0)
+        switch (g) {
+        case -1:
+            ITEM("Lock risky options again", M_LOCK);
+            break;
+        case G_DRIVES:
+            ITEM("Remount drives (SD / USB / internal)", M_REMOUNT);
+            ITEM("FTP server", M_FTP);
+            ITEM("Wiiload (receive apps and files)", M_WIILOAD);
+            ITEM("Format a USB drive as FAT32", M_FORMAT);
+            break;
+        case G_TITLES:
+            ITEM("Install Wii U titles (WUP / WUD help)", M_WUPHELP);
+            ITEM("Export all vWii saves", M_SAVES);
+            ITEM("Back up the NAND / MLC (how to)", M_NAND);
+            break;
+        case G_CONSOLE:
+            ITEM("Miis", M_MIIS);
+            ITEM("Export Wii U Miis (.ffsd)", M_MIIU);
+            ITEM("Save Wii U keys for GodModeWii", M_KEYS);
+            break;
+        case G_TOOLS:
+            ITEM("IR remote (TV / AV control, from the GamePad)", M_IR);
+            ITEM("Sketchpad (draw)", M_DRAW);
+            ITEM("Voice memos (record / play)", M_MEMOS);
+            ITEM("Alarm clock", M_ALARM);
+            ITEM("Calculator", M_CALC);
+            ITEM("Clock and calendar", M_CLOCK);
+            break;
+        case G_SETTINGS:
+            snprintf(theme_item, sizeof(theme_item), "Theme: %s", colors_name(colors_current()));
+            ITEM(theme_item, M_THEME);
+            ITEM(sfx_enabled() ? "Sound effects: ON (select to turn off)" : "Sound effects: OFF (select to turn on)", M_SFX);
+            ITEM("About / credits", M_ABOUT);
+            break;
+        default:
+            if (launched_from_hbl()) ITEM("Exit to Homebrew Launcher", M_LOADER);
+            ITEM("Exit to Wii U Menu", M_WIIMENU);
+            ITEM("Restart console", M_RESTART);
+            ITEM("Power off", M_POWER);
+            break;
+        }
+#undef ITEM
+        /* HOME closes the menu like the Wii's own HOME Menu; leaving is always an explicit choice. */
+        int r = g < 0 ? 0 : ui_menu_ex(groups[g], items, NULL, n, 0, "A Select   B Back");
+        if (r < 0)
+            continue;
         switch (code[r]) {
         case M_LOCK:
             risk_lock();

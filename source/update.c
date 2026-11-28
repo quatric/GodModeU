@@ -64,5 +64,6 @@ int update_poll(void)
 
 void update_shutdown(void)
 {
+    WIIUUPDATE_Cancel();                /* a check still running stops now instead of finishing first */
     WIIUUPDATE_Shutdown();
 }

@@ -28,6 +28,42 @@ void *ui_framebuffer(int *w, int *h)
     return screen_xfb();
 }
 
+/* An RGBA picture at (x, y), each pixel scale x scale, blended over what is there (whole YUY2 words). */
+void ui_blit_rgba(int x, int y, const u8 *rgba, int w, int h, int scale)
+{
+    int fw, fh;
+    u8 *fb = ui_framebuffer(&fw, &fh);
+    if (!fb || !rgba || scale < 1) return;
+    x &= ~1;
+    for (int dy = 0; dy < h * scale; dy++) {
+        int sy = y + dy;
+        if (sy < 0 || sy >= fh) continue;
+        u32 *row = (u32 *)(fb + sy * fw * 2);
+        const u8 *src = rgba + (dy / scale) * w * 4;
+        for (int dx = 0; dx < w * scale; dx += 2) {
+            int px = x + dx;
+            if (px < 0 || px + 1 >= fw) continue;
+            u32 old = row[px / 2];
+            int oy[2] = { (int)(old >> 24), (int)(old >> 8 & 255) }, ou = (int)(old >> 16 & 255) - 128,
+                ov = (int)(old & 255) - 128, yy[2], uu = 0, vv = 0;
+            for (int k = 0; k < 2; k++) {
+                const u8 *p = src + ((dx + k) / scale) * 4;
+                int a = p[3];
+                /* what is under, back to RGB, then blended */
+                int c = oy[k] - 16, r0 = (298 * c + 409 * ov + 128) >> 8, g0 = (298 * c - 100 * ou - 208 * ov + 128) >> 8,
+                    b0 = (298 * c + 516 * ou + 128) >> 8;
+                int r = (p[0] * a + r0 * (255 - a)) / 255, g = (p[1] * a + g0 * (255 - a)) / 255,
+                    b = (p[2] * a + b0 * (255 - a)) / 255;
+                r = r < 0 ? 0 : r > 255 ? 255 : r, g = g < 0 ? 0 : g > 255 ? 255 : g, b = b < 0 ? 0 : b > 255 ? 255 : b;
+                yy[k] = 16 + ((66 * r + 129 * g + 25 * b + 128) >> 8);
+                uu += 128 + ((-38 * r - 74 * g + 112 * b + 128) >> 8);
+                vv += 128 + ((112 * r - 94 * g - 18 * b + 128) >> 8);
+            }
+            row[px / 2] = (u32)yy[0] << 24 | (u32)(uu / 2) << 16 | (u32)yy[1] << 8 | (u32)(vv / 2);
+        }
+    }
+}
+
 #ifdef GMW_AUTOTEST
 bool ui_test_dump(void)
 {
@@ -76,7 +112,7 @@ int ui_rows(void) { return g_rows; }
  * else draws (ui_goto, ui_clear), since it can't know what that covered. */
 #define FCACHE 512
 static struct { short row, col, width; u32 hash, gen; } fcache[FCACHE];
-static u32 row_gen[64] , clear_gen = 1;
+static u32 row_gen[64];
 
 static void goto_raw(int row, int col)
 {
@@ -990,3 +1026,55 @@ void ui_hint_update(void)
 }
 
 u32 ui_hint_under(void) { return hov_btn; }
+
+/* ---------------------------------------------------------------- screenshots */
+#include <png.h>
+#include "pda.h"
+#include "vfs.h"
+#include "wiiu/screen.h"
+
+/* What is on the screen, as GodModeU/screenshots/shot_NNN.png; the path in `out`. */
+bool ui_screenshot(char *out, size_t n)
+{
+    int w = SCREEN_W, h = SCREEN_H;
+    const u8 *fb = screen_xfb();
+    char dir[VFS_PATH_MAX];
+    if (!w || !h || !pda_dir("screenshots", dir, sizeof(dir), true)) return false;
+    for (int i = 1; i < 1000; i++) {
+        snprintf(out, n, "%s/shot_%03d.png", dir, i);
+        if (access(out, F_OK) != 0) break;
+    }
+    u8 *rgb = malloc((size_t)w * 3);
+    FILE *f = rgb ? fopen(out, "wb") : NULL;
+    png_structp png = f ? png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL) : NULL;
+    png_infop info = png ? png_create_info_struct(png) : NULL;
+    bool ok = false;
+    if (info && !setjmp(png_jmpbuf(png))) {
+        png_init_io(png, f);
+        png_set_IHDR(png, info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
+                     PNG_FILTER_TYPE_DEFAULT);
+        png_write_info(png, info);
+        for (int y = 0; y < h; y++) {
+            const u8 *row = fb + (size_t)y * w * 2;
+            for (int x = 0; x < w; x += 2) {                 /* YUY2: Y0 U Y1 V */
+                int y0 = row[x * 2] - 16, u = row[x * 2 + 1] - 128, y1 = row[x * 2 + 2] - 16, v = row[x * 2 + 3] - 128;
+                for (int k = 0; k < 2; k++) {
+                    int yy = (k ? y1 : y0) * 298, r = (yy + 409 * v + 128) >> 8, g = (yy - 100 * u - 208 * v + 128) >> 8,
+                        b = (yy + 516 * u + 128) >> 8;
+                    u8 *p = rgb + (x + k) * 3;
+                    p[0] = r < 0 ? 0 : r > 255 ? 255 : r;
+                    p[1] = g < 0 ? 0 : g > 255 ? 255 : g;
+                    p[2] = b < 0 ? 0 : b > 255 ? 255 : b;
+                }
+            }
+            png_write_row(png, rgb);
+        }
+        png_write_end(png, NULL);
+        ok = true;
+    }
+    if (png) png_destroy_write_struct(&png, info ? &info : NULL);
+    if (f) fclose(f);
+    if (!ok && f) remove(out);
+    free(rgb);
+    return ok;
+}
