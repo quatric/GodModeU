@@ -21,6 +21,7 @@
 #include "fat32fmt.h"
 #include "filetools.h"
 #include "zipwrite.h"
+#include "search.h"
 #include "ops.h"
 #include "waddump.h"
 #include "wadinstall.h"
@@ -1025,6 +1026,7 @@ enum {
     A_INJECT,
     A_TITLEINFO,
     A_ZIP,
+    A_SEARCH,
     A_COUNT
 };
 
@@ -1242,6 +1244,10 @@ static void actions_menu(void)
     en[n] = on_entry && !nmarks && !ro && !card && !ents[e].is_dir;
     code[n++] = A_EDIT_HEX;
 
+    items[n] = "Find files in this folder";
+    en[n] = cwd[0] != '\0';
+    code[n++] = A_SEARCH;
+
     items[n] = "Select all";
     en[n] = nents > 0;
     code[n++] = A_ALL;
@@ -1343,6 +1349,12 @@ static void actions_menu(void)
         if (!vfs_join(p, sizeof(p), cwd, ents[e].name)) break;
         if (code[r] == A_COMPARE) hexcompare(p, clip[0]);
         else if (code[r] == A_REPLACE ? file_replace(p, clip[0]) : file_inject(p, clip[0])) reload_keep();
+        break;
+    }
+    case A_SEARCH: {
+        char hit[VFS_PATH_MAX], dir[VFS_PATH_MAX];
+        if (file_search(cwd, hit, sizeof(hit)) && vfs_parent(hit, dir, sizeof(dir)))
+            load_dir(dir, vfs_basename(hit));
         break;
     }
     case A_ZIP: {
