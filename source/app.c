@@ -21,7 +21,9 @@
 #include "fat32fmt.h"
 #include "filetools.h"
 #include "zipwrite.h"
+#include "favorites.h"
 #include "search.h"
+#include "launch.h"
 #include "ops.h"
 #include "waddump.h"
 #include "wadinstall.h"
@@ -1027,6 +1029,7 @@ enum {
     A_TITLEINFO,
     A_ZIP,
     A_SEARCH,
+    A_FAV,
     A_COUNT
 };
 
@@ -1244,6 +1247,18 @@ static void actions_menu(void)
     en[n] = on_entry && !nmarks && !ro && !card && !ents[e].is_dir;
     code[n++] = A_EDIT_HEX;
 
+    /* a .wuhb / .rpx, or an app folder, on the SD card: a shortcut in the HOME menu */
+    char fav_prog[VFS_PATH_MAX];
+    int fav_at = -1;
+    bool fav_ok = here_path[0] && fav_program(here_path, fav_prog, sizeof(fav_prog));
+    if (!fav_ok && !here_path[0]) fav_ok = fav_program(cwd, fav_prog, sizeof(fav_prog));
+    if (fav_ok) {
+        fav_at = fav_find(fav_prog);
+        items[n] = fav_at >= 0 ? "Remove from HOME menu favorites" : "Add to HOME menu favorites";
+        en[n] = true;
+        code[n++] = A_FAV;
+    }
+
     items[n] = "Find files in this folder";
     en[n] = cwd[0] != '\0';
     code[n++] = A_SEARCH;
@@ -1351,6 +1366,17 @@ static void actions_menu(void)
         else if (code[r] == A_REPLACE ? file_replace(p, clip[0]) : file_inject(p, clip[0])) reload_keep();
         break;
     }
+    case A_FAV:
+        if (fav_at >= 0) {
+            fav_remove(fav_at);
+            status(C_GREEN, "Removed from the HOME menu's favorites.");
+        } else if (fav_add(fav_prog)) {
+            status(C_GREEN, "Added to HOME > Favorite apps.");
+        } else {
+            ui_message("FAVORITES", C_YELLOW, fav_count() >= FAV_MAX ? "The favorites are full (16): remove one first."
+                                              : "Couldn't save the favorites to the SD card.");
+        }
+        break;
     case A_SEARCH: {
         char hit[VFS_PATH_MAX], dir[VFS_PATH_MAX];
         if (file_search(cwd, hit, sizeof(hit)) && vfs_parent(hit, dir, sizeof(dir)))
@@ -1472,6 +1498,36 @@ static void format_menu(void)
 }
 
 /* Returns true if the user wants to leave the program. */
+/* HOME > Favorite apps: A starts one; the last item takes one off the list. True: leave to start it. */
+static bool favorites_menu(void)
+{
+    for (;;) {
+        int n = fav_count();
+        if (!n) return false;
+        const char *items[FAV_MAX + 1];
+        for (int i = 0; i < n; i++) items[i] = fav_name(i);
+        items[n] = "Remove a favorite...";
+        int r = ui_menu_ex("FAVORITE APPS", items, NULL, n + 1, 0, "A Start   B Back");
+        if (r < 0) return false;
+        if (r == n) {
+            int k = ui_menu_ex("REMOVE WHICH?", items, NULL, n, 0, "A Remove   B Back");
+            if (k >= 0) fav_remove(k);
+            continue;
+        }
+        if (!vfs_exists(fav_path(r))) {
+            char q[VFS_PATH_MAX + 96];
+            snprintf(q, sizeof(q), "%s isn't there any more (was the SD card or USB drive changed?).\n\nRemove it from "
+                     "the favorites?", fav_path(r));
+            if (ui_confirm("FAVORITE APPS", C_YELLOW, q)) fav_remove(r);
+            continue;
+        }
+        if (launch_program(fav_path(r))) {
+            exit_req = EXIT_LAUNCH;
+            return true;
+        }
+    }
+}
+
 static bool system_menu(void)
 {
     enum {
@@ -1497,6 +1553,7 @@ static bool system_menu(void)
         M_NAND,
         M_WUPHELP,
         M_ABOUT,
+        M_LAUNCH,
         M_LOADER,
         M_WIIMENU,
         M_RESTART,
@@ -1514,14 +1571,20 @@ static bool system_menu(void)
             "Drives and network", "Titles and saves", "Console and Miis", "Tools", "Settings", "Exit and power",
         };
         enum { G_DRIVES, G_TITLES, G_CONSOLE, G_TOOLS, G_SETTINGS, G_EXIT, G_COUNT };
-        const char *gitems[G_COUNT + 1];
-        int gn = 0, glock = -1;
+        const char *gitems[G_COUNT + 2];
+        int gn = 0, glock = -1, gfav = -1;
         if (risk_any_unlocked() && !risk_forced()) { glock = gn; gitems[gn++] = "Lock risky options again"; }
+        fav_reload();
+        if (fav_count()) { gfav = gn; gitems[gn++] = "Favorite apps"; }
         for (int g = 0; g < G_COUNT; g++) gitems[gn++] = groups[g];
         int gr = ui_menu_ex("HOME", gitems, NULL, gn, 0, "A Open   B / HOME Back");
         if (gr < 0)
             return false;
-        int g = gr == glock ? -1 : gr - (glock >= 0 ? 1 : 0);
+        if (gr == gfav) {
+            if (favorites_menu()) return true;
+            continue;
+        }
+        int g = gr == glock ? -1 : gr - (glock >= 0 ? 1 : 0) - (gfav >= 0 ? 1 : 0);
 
         char theme_item[48], saver_item[56];
         const char *items[16];
@@ -1567,6 +1630,7 @@ static bool system_menu(void)
             ITEM("About / credits", M_ABOUT);
             break;
         default:
+            ITEM("Launch (Homebrew Launcher, vWii, Aroma menu...)", M_LAUNCH);
             if (launched_from_hbl()) ITEM("Exit to Homebrew Launcher", M_LOADER);
             ITEM("Exit to Wii U Menu", M_WIIMENU);
             ITEM("Restart console", M_RESTART);
@@ -1680,6 +1744,10 @@ static bool system_menu(void)
             if (pick >= 0) colors_apply(pick, true);
             break;
         }
+        case M_LAUNCH:
+            if (!launch_menu()) return false;
+            exit_req = EXIT_LAUNCH;
+            return true;
         case M_LOADER: exit_req = EXIT_LOADER; return true;
         case M_WIIMENU: exit_req = EXIT_MENU; return true;
         case M_RESTART: sfx_play(SFX_POWEROFF); sfx_wait(); exit_req = EXIT_RESTART; return true;

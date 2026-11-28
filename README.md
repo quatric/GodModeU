@@ -235,6 +235,16 @@ The details of each are below, and in [docs/FORMATS.md](docs/FORMATS.md).
 * **Typing names** uses the Wii U's own on-screen keyboard on the GamePad. If it can't start, GodModeWii's character roller is
   used.
 * **Aroma's plugin menu** opens over the app with its usual combo (L + Down + Minus).
+* **Launch** (HOME > Exit and power): the Wii U Homebrew Launcher (when it is on the SD card), the Wii U Menu, and on the
+  vWii the Wii Menu (Priiloader runs first when it is installed), the Homebrew Channel and a GodModeWii channel (one whose
+  banner is named GodModeWii), each straight through CMPT or, for the channels, through
+  [hbl2hbc](https://github.com/FIX94/hbl2hbc) (FIX94) when a `.wuhb` / `.rpx` build of it is in `wiiu/apps/`, which skips
+  Nintendo's screen and controller prompts. GodModeU writes `sd:/hbl2hbc.txt` for that launch and puts your own back the next
+  time it starts. Aroma's plugin menu is there too. Wii U programs start through Aroma's RPXLoader.
+* **Favorite apps:** Actions on a `.wuhb` / `.rpx` (or its folder) on the SD card adds it to HOME > Favorite apps, to start
+  from anywhere (by its `meta.xml` name), through RPXLoader.
+* **Find files** (Actions): every name under the folder that has the text in it, any case, `*` and `?` as wildcards.
+* **Screensaver:** after a few idle minutes (Settings), or now from Settings; the screen comes back as it was.
 
 ## Installing Wii U titles
 

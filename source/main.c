@@ -23,6 +23,7 @@
 #include "colors.h"
 #include "alarm.h"
 #include "update.h"
+#include "launch.h"
 
 /* The same title IDs WHBProcInit treats as the Homebrew Launcher. */
 bool launched_from_hbl(void)
@@ -54,6 +55,7 @@ int main(int argc, char **argv)
     risk_load_forced();
     sfx_load_setting();
     ui_saver_load();
+    launch_restore();
     colors_load();
     alarm_load();
     update_start();
@@ -86,7 +88,10 @@ int main(int argc, char **argv)
     /* g_quit_request means ProcUI already ended the app. Outside the Homebrew
      * Launcher a title may only leave through the Wii U Menu, with ProcUI running. */
     if (!g_quit_request) {
-        if (mode == EXIT_POWEROFF) {
+        if (mode == EXIT_LAUNCH) {
+            if (!launch_now()) SYSLaunchMenu();
+            while (WHBProcIsRunning()) {}
+        } else if (mode == EXIT_POWEROFF) {
             OSShutdown();
             while (WHBProcIsRunning()) {}
         } else if (mode == EXIT_RESTART) {
