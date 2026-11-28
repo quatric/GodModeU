@@ -342,6 +342,11 @@ make
 `make` builds the `libwiiuinput` and `libwiiuupdate` submodules first (and compiles `libwiiuir`'s sources in), then `GodModeU.rpx` and `GodModeU.wuhb`. CI builds every push (download the
 `GodModeU` artifact), and pushing a tag like `v0.5.0` publishes a GitHub Release with the zip.
 
+## License
+
+GodModeU is released under the **GNU General Public License v3.0 or later** (see `LICENSE`), which also covers the
+LGPL-3.0 / GPL-3.0 / Apache-2.0 code it is built with (libmocha, unarr, libwiiuinput, libwiiuupdate, libwiiuir).
+
 ## Credits
 
 GodModeU stands on a lot of other people's work. Thank you!

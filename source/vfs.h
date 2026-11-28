@@ -122,13 +122,16 @@ bool vfs_mkdir(const char *path);
 bool vfs_remove(const char *path, bool is_dir);   /* empty dirs only */
 bool vfs_rename(const char *from, const char *to);
 
-/* GodModeWii reads raw USB sectors for drives libfat can't mount; Cafe OS mounts them itself here. */
-static inline bool vfs_usb_raw_read(int slot, u64 off, void *buf, u32 len)
-{
-    (void)slot; (void)off; (void)buf; (void)len;
-    return false;
-}
-static inline u64 vfs_usb_raw_size(int slot) { (void)slot; return 0; }
+/* Raw sectors of a USB drive Cafe OS, FatFs and NTFS-3G all left alone (WBFS, HFS+, ...), through Mocha. */
+bool vfs_usb_raw_read(int slot, u64 off, void *buf, u32 len);
+u64 vfs_usb_raw_size(int slot);
+
+/* Formatting: the file system on a USB drive the Homebrew Launcher and the vWii loaders can't use (exFAT, NTFS,
+ * ext, WBFS, unreadable...), or NULL (FAT32, Wii U formatted, a further partition, nothing there). */
+const char *vfs_foreign_fs(int dev);
+u64 vfs_drive_sectors(int dev);                 /* 512-byte sectors, 0 if unknown */
+void vfs_unmount_all(void);                     /* before writing to a drive raw; vfs_remount() after */
+bool vfs_drive_write(void *slot, u64 lba, u32 n, const void *buf);   /* slot: (void *)(intptr_t)usb slot */
 
 bool vfs_open_read(vfs_file *f, const char *path);
 bool vfs_open_write(vfs_file *f, const char *path);   /* create / truncate */

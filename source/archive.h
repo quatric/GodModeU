@@ -190,6 +190,8 @@ archive_t *arc_contentbin_open(const src_t *file, const char *name);
 bool arc_databin_probe(const src_t *file, const char *name);
 archive_t *arc_databin_open(const src_t *file, const char *name);
 
+bool arc_wbfs_probe(const src_t *file, const char *name);      /* a WBFS partition (old USB loaders): each game as an .iso */
+archive_t *arc_wbfs_open(const src_t *file, const char *name);
 bool arc_wfs_probe(const src_t *file, const char *name);
 archive_t *arc_wfs_open(const src_t *file, const char *name);
 bool arc_wfs_key_at(int index, uint8_t key[16]);        /* the provider, used by arc_wfs.c */

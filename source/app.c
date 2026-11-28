@@ -18,6 +18,7 @@
 #include "calc.h"
 #include "clock.h"
 #include "vfs.h"
+#include "fat32fmt.h"
 #include "ops.h"
 #include "waddump.h"
 #include "wadinstall.h"
@@ -733,7 +734,7 @@ static void show_credits(void)
         "quatric & cmyksoda\n\n"
         "GodModeU " GMW_VERSION " - a GodMode9-style file manager for the Wii U, the Wii U port of GodModeWii.\n"
         "Inspired by GodMode9 (d0k3), GodMode9i (DS-Homebrew), ftpii and WiiXplorer (Dimok, niuus).\n"
-        "Built with devkitPPC and wut (devkitPro). GPL-2.0. See README.",
+        "Built with devkitPPC and wut (devkitPro). GPL-3.0-or-later. See README.",
 
         "Controllers: libwiiuinput (quatric), the Wii U port of libwiiinput, after snes9xgx's Wii U driver "
         "(Daryl Borth) and RiftWii's GameCube adapter code.\n\n"
@@ -1288,12 +1289,71 @@ static void reload_keep_safe(void)
         reload_keep();
 }
 
+/* ---------------------------------------------------------------- format a USB drive as FAT32 */
+
+static void fmt_progress(u64 done, u64 total, void *ctx)
+{
+    (void)ctx;
+    ui_busy_progress(done, total);
+}
+
+/* Only a USB drive in a format the Wii's Homebrew Channel and USB loaders can't use (exFAT, NTFS, ext, WBFS,
+ * unreadable) is offered: a FAT drive never is, and a Wii U formatted drive is mounted by the Wii U and never listed. */
+static void format_menu(void)
+{
+    const char *T = "FORMAT AS FAT32";
+    const char *names[USB_SLOTS];
+    char labels[USB_SLOTS][64];
+    int devs[USB_SLOTS], n = 0;
+    for (int d = DEV_USB0; d < DEV_USB0 + USB_SLOTS; d++) {
+        const char *fs = vfs_foreign_fs(d);
+        if (!fs) continue;
+        snprintf(labels[n], sizeof(labels[n]), "%s  (%s)", g_devs[d].name, fs);
+        names[n] = labels[n];
+        devs[n++] = d;
+    }
+    if (!n) {
+        ui_message(T, C_GREEN, "Every USB drive here is FAT already, Wii U formatted, or not connected. Nothing needs "
+                   "formatting.\n\nOnly a drive in another format (exFAT, NTFS, ext, WBFS, unreadable...) is offered here.");
+        return;
+    }
+    int r = ui_menu("FORMAT WHICH DRIVE?", names, NULL, n, 0);
+    if (r < 0) return;
+    int dev = devs[r];
+    u64 secs = vfs_drive_sectors(dev);
+    const u32 ss = 512;
+    fat32_plan p;
+    char sz[24], q[700];
+    if (!secs) { ui_message(T, C_RED, "The drive can't be reached."); return; }
+    ui_fmt_size(sz, sizeof(sz), secs * ss);
+    if (!fat32_layout(secs, ss, &p)) { ui_message(T, C_RED, "This drive is too small or too big for FAT32."); return; }
+    snprintf(q, sizeof(q), "%s is %s.\n\nFormat it as FAT32 (%s, one partition, %u KB clusters)%s?\n\nEVERYTHING ON THE "
+             "DRIVE IS ERASED: every partition and every file. Copy off what you want to keep first.", g_devs[dev].name,
+             vfs_foreign_fs(dev), sz, (unsigned)(p.spc * ss / 1024),
+             (u64)p.vol + p.start < secs ? " (FAT32 tops out at 2 TB: the rest stays unused)" : "");
+    if (!ui_confirm(T, C_RED, q)) return;
+    snprintf(q, sizeof(q), "Last chance: erase all of %s (%s) and format it?", g_devs[dev].name, sz);
+    if (!ui_confirm(T, C_RED, q)) return;
+    char err[160] = "";
+    ui_busy_begin("Formatting...");
+    vfs_unmount_all();
+    bool ok = fat32_format(vfs_drive_write, (void *)(intptr_t)(dev - DEV_USB0), secs, ss, "WII USB", fmt_progress, NULL,
+                           err, sizeof(err));
+    ui_busy_end();
+    ui_splash("Looking for drives...");
+    vfs_remount();
+    free_dir();
+    cwd[0] = '\0';
+    ui_message(ok ? "FORMATTED" : T, ok ? C_GREEN : C_RED, ok ? "The drive is FAT32 now, empty and ready for apps/ and wbfs/." : err);
+}
+
 /* Returns true if the user wants to leave the program. */
 static bool system_menu(void)
 {
     enum {
         M_LOCK,
         M_REMOUNT,
+        M_FORMAT,
         M_FTP,
         M_WIILOAD,
         M_MIIS,
@@ -1335,6 +1395,7 @@ static bool system_menu(void)
         }
 
         items[n] = "Remount drives (SD / USB / internal)";              code[n++] = M_REMOUNT;
+        items[n] = "Format a USB drive as FAT32";                       code[n++] = M_FORMAT;
         items[n] = "FTP server";                                        code[n++] = M_FTP;
         items[n] = "Wiiload (receive apps and files)";                  code[n++] = M_WIILOAD;
         items[n] = "Miis";                                              code[n++] = M_MIIS;
@@ -1371,6 +1432,9 @@ static bool system_menu(void)
         case M_LOCK:
             risk_lock();
             status(C_GREEN, "Risky options locked.");
+            return false;
+        case M_FORMAT:
+            format_menu();
             return false;
         case M_REMOUNT:
             ui_splash("Looking for drives...");

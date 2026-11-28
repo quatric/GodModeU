@@ -9,6 +9,7 @@
 #include <coreinit/filesystem_fsa.h>
 #include <whb/sdcard.h>
 #include <mocha/mocha.h>
+#include <mocha/fsa.h>
 
 #include "vfs.h"
 #include "arcfs.h"
@@ -263,8 +264,76 @@ static bool attach_vol(int dev, const char *vol, const char *devpath)
 static bool usbfat_on[USB_SLOTS], usbntfs_on[USB_SLOTS];
 static char usb_dev_name[USB_SLOTS][32];     /* "USB Drive N", or which drive a further partition is on */
 
+static bool usb_extra[USB_SLOTS];             /* a further partition of another drive */
+static int32_t raw_h[USB_SLOTS];
+static bool raw_on[USB_SLOTS];
+static u64 raw_bytes[USB_SLOTS];
+static u8 *raw_buf;                            /* 64-byte aligned, RAW_IO sectors */
+#define RAW_IO 128
+
+static bool raw_open(int s)
+{
+    if (raw_on[s]) return true;
+    if (!fsa_ready || !mocha_ready || (!raw_buf && !(raw_buf = memalign(0x40, RAW_IO * 512)))) return false;
+    char dev[24];
+    snprintf(dev, sizeof(dev), "/dev/usb%02d", s + 1);
+    if (FSAEx_RawOpenEx(fsa_client, dev, &raw_h[s]) < 0) return false;
+    raw_on[s] = true;
+    FSADeviceInfo info;
+    raw_bytes[s] = FSAGetDeviceInfo(fsa_client, dev, &info) == (FSError)FS_STATUS_OK
+                   ? info.deviceSizeInSectors * (info.deviceSectorSize ? info.deviceSectorSize : 512) : 0;
+    if (!raw_bytes[s] && FSAEx_RawReadEx(fsa_client, raw_buf, 512, 1, 0, raw_h[s]) >= 0 && !memcmp(raw_buf, "WBFS", 4))
+        raw_bytes[s] = (u64)(raw_buf[4] << 24 | raw_buf[5] << 16 | raw_buf[6] << 8 | raw_buf[7]) << raw_buf[8];
+    return true;
+}
+
+static void raw_close_all(void)
+{
+    for (int s = 0; s < USB_SLOTS; s++) {
+        if (raw_on[s]) FSAEx_RawCloseEx(fsa_client, raw_h[s]);
+        raw_on[s] = false;
+        raw_bytes[s] = 0;
+    }
+}
+
+u64 vfs_usb_raw_size(int slot)
+{
+    return slot >= 0 && slot < USB_SLOTS && raw_open(slot) ? raw_bytes[slot] : 0;
+}
+
+bool vfs_usb_raw_read(int slot, u64 off, void *buf, u32 len)
+{
+    if (!vfs_usb_raw_size(slot)) return false;
+    u8 *out = buf;
+    while (len) {
+        u64 lba = off >> 9;
+        u32 in = off & 511, n = (in + len + 511) >> 9;
+        if (n > RAW_IO) n = RAW_IO;
+        if (FSAEx_RawReadEx(fsa_client, raw_buf, 512, n, lba, raw_h[slot]) < 0) return false;
+        u32 k = n * 512 - in < len ? n * 512 - in : len;
+        memcpy(out, raw_buf + in, k);
+        out += k, off += k, len -= k;
+    }
+    return true;
+}
+
+bool vfs_drive_write(void *slot, u64 lba, u32 n, const void *buf)
+{
+    int s = (int)(intptr_t)slot;
+    if (!raw_open(s)) return false;
+    const u8 *p = buf;
+    while (n) {                                  /* the formatter's buffers are 64-byte aligned already */
+        u32 k = n < RAW_IO ? n : RAW_IO;
+        if (FSAEx_RawWriteEx(fsa_client, (void *)p, 512, k, lba, raw_h[s]) < 0) return false;
+        p += k * 512, lba += k, n -= k;
+    }
+    return true;
+}
+
 static void detach_all(void)
 {
+    arcfs_unpin_all();
+    raw_close_all();
     for (int i = 0; i < DEV_COUNT; i++) {
         if (mocha_name[i][0])
             Mocha_UnmountFS(mocha_name[i]);
@@ -297,6 +366,7 @@ static void mount_usb(void)
         d->fat = false;
         d->readonly = false;
         d->always_show = false;
+        usb_extra[i] = false;
         /* Only a slot Cafe OS didn't mount as WFS is opened raw. */
         char name[16];
         snprintf(name, sizeof(name), "usbfat%d", i + 1);
@@ -323,6 +393,12 @@ static void mount_usb(void)
             d->always_show = true;
             snprintf(d->note, sizeof(d->note), "%s",
                      nt == USBNTFS_DIRTY ? "NTFS: shut Windows down fully" : "NTFS: can't mount");
+        }
+        if (!d->mounted && !d->note[0] && fsa_ready && mocha_ready && arcfs_mount_wfs(DEV_USB0 + i, i)) {
+            /* WBFS, HFS+, a Wii U drive Cafe OS didn't mount...: read-only through the archive readers */
+            d->mounted = d->readonly = true;
+            const char *k = arcfs_pin_kind(DEV_USB0 + i);
+            snprintf(d->note, sizeof(d->note), !strcmp(k, "WBFS") ? "old WBFS format  read-only" : "%.20s  read-only", k);
         }
     }
 }
@@ -371,6 +447,7 @@ static void mount_usb_extras(void)
             if (!ok)
                 continue;
             d->mounted = true;
+            usb_extra[k] = true;
             d->fat = parts[p].kind == PART_FAT;
             d->readonly = false;
             snprintf(d->real, sizeof(d->real), "%s:", name);
@@ -441,6 +518,31 @@ void vfs_update_space(int dev)
     d->total = (u64)info.deviceSizeInSectors * info.deviceSectorSize;
     d->free = freeb;
     d->space_known = d->total > 0;
+}
+
+const char *vfs_foreign_fs(int dev)
+{
+    if (dev < DEV_USB0 || dev >= DEV_USB0 + USB_SLOTS) return NULL;     /* the SD card holds Aroma: FAT32 already */
+    int s = dev - DEV_USB0;
+    vfs_dev *d = &g_devs[dev];
+    if (usb_extra[s]) return NULL;
+    if (arcfs_dev_pinned(dev)) return strcmp(arcfs_pin_kind(dev), "WFS") ? arcfs_pin_kind(dev) : NULL;
+    if (usbntfs_on[s]) return "NTFS";
+    if (usbfat_on[s]) return d->fat ? NULL : d->readonly ? "ext" : "exFAT";
+    if (d->mounted) return NULL;                                            /* Wii U formatted, mounted by Cafe OS */
+    if (d->note[0]) return "NTFS";                                          /* NTFS that wouldn't mount */
+    return raw_open(s) ? "unreadable" : NULL;
+}
+
+u64 vfs_drive_sectors(int dev)
+{
+    return vfs_usb_raw_size(dev - DEV_USB0) >> 9;
+}
+
+void vfs_unmount_all(void)
+{
+    arcfs_flush();
+    detach_all();
 }
 
 static void mount_all(void)
