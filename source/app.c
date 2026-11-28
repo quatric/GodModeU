@@ -759,26 +759,50 @@ static void show_credits(void)
         "Inspired by GodMode9 (d0k3), GodMode9i (DS-Homebrew), ftpii and WiiXplorer (Dimok, niuus).\n"
         "Built with devkitPPC and wut (devkitPro). GPL-3.0-or-later. See README.",
 
-        "Controllers: libwiiuinput (quatric), the Wii U port of libwiiinput, after snes9xgx's Wii U driver "
-        "(Daryl Borth) and RiftWii's GameCube adapter code.\n\n"
-        "Wii U titles: WUP installing as WUP Installer GX2 (Dimok, FIX94, Yardape8000) does it through MCP; WUD / WUX "
-        "discs read as wud2app (FIX94) and JWUDTool (Maschell) lay them out.",
+        "Credits, A to Z (with licenses in the README):\n"
+        "- 3dbrew: the 3DS / Wii U Mii format the QR codes use\n"
+        "- AddrLib's tiling, as decaf-emu reads it: GX2 textures (GTX, BFLIM, BFFNT, BFRES)\n"
+        "- Aroma and RPXLoader (Maschell): Wii U homebrew and favorites started from the app\n"
+        "- bzip2 and Zstandard (Meta): RVZ / WIA\n"
+        "- devkitPPC and wut (devkitPro): the build\n"
+        "- Dolphin: the RVZ / WIA format description\n"
+        "- dr_libs (David Reid): WAV, AIFF, MP3 and FLAC\n"
+        "- FFmpeg's Mobiclip decoder (Florian Nouwt, Adib Surani, Paul B Mahol; LGPL 2.1+): Mobiclip video\n"
+        "- ftpii and WiiXplorer (Dimok, niuus): inspiration\n"
+        "- GodMode9 (d0k3) and GodMode9i (DS-Homebrew): inspiration, write permission colours",
 
-        "Audio and texture formats match quatric's nintoolbox and mobipeg: GX2 textures (GTX, BFLIM, BFFNT, BFRES) "
-        "deswizzled after AddrLib's tiling, as decaf-emu and nintoolbox read them.\n\n"
-        "Mobiclip, THP and Flipnote playback: quatric's wii-mobiclip-player (MIT), whose Mobiclip decoder is "
-        "ported from FFmpeg (Florian Nouwt, Adib Surani, Paul B Mahol; LGPL 2.1+). JPEG frames: NanoJPEG (Martin J. Fiedler). Vorbis: Tremor.",
+        "- hbl2hbc (FIX94): vWii channels started without the screen prompts\n"
+        "- jaames' mii-qr.py: how a Mii QR code is encrypted\n"
+        "- JWUDTool (Maschell) and wud2app (FIX94): WUD / WUX discs\n"
+        "- libmocha (Maschell): raw drive and disc access\n"
+        "- libwbfs (Kwiirk, Waninkoko): WBFS\n"
+        "- libwiiuinput, libwiiuir and libwiiuupdate (quatric): controllers, IR, updates\n"
+        "- Logitech Harmony IR archive (pickysysadmin, CC0): the IR remote's devices\n"
+        "- lzop (Markus Oberhumer): LZO\n"
+        "- MII-FLOOD-2: the Mii Parade's layout\n"
+        "- mii-qr: the idea of Mii QR codes\n"
+        "- MiiJS (Stewared, ISC): Wii to 3DS Mii features\n"
+        "- MiiKit (cmyksoda), from hbc-reborn's sdk/mii: Miis",
 
-        "RSEQ sequences: layouts from VGMTrans. WAV, AIFF, MP3 and FLAC: dr_libs (David Reid). zip, 7z and RAR 1.5 - 4: unarr (selmf, LZMA SDK by "
-        "Igor Pavlov); RAR5 from the public format description.\n\n"
-        "RVZ / WIA: written from Dolphin's format description; Zstandard (Meta), bzip2. LZO1X and Retro Studios PAK layouts match nintoolbox; "
-        "lzop by Markus Oberhumer. WFS: wfslib and wfs-tools (koolkdev).",
+        "- NanoJPEG (Martin J. Fiedler): JPEG frames\n"
+        "- nintoolbox and mobipeg (quatric): audio and texture formats\n"
+        "- Project Nayuki's QR Code generator (MIT): QR codes\n"
+        "- RiftWii (KakarottoCake): the GameCube adapter code\n"
+        "- RVT2RVL: the development console common key\n"
+        "- ShowMiiWads (Leathl) and NUSD: title info\n"
+        "- snes9xgx's Wii U driver (Daryl Borth): controllers\n"
+        "- TiVo: TiVo mode's sounds\n"
+        "- Tremor: Vorbis\n"
+        "- unarr (selmf, LZMA SDK by Igor Pavlov): zip, 7z and RAR 1.5 - 4\n"
+        "- VGMTrans: RSEQ sequences\n"
+        "- wfslib and wfs-tools (koolkdev): WFS\n"
+        "- wii-mobiclip-player (quatric, MIT): Mobiclip, THP and Flipnote\n"
+        "- WiiBrew: SYSCONF and the Mii data",
 
-        "IR remote: WiiIR, SingIR and OptimizeIR (Dakota Thorpe) through libwiiuir, out of the GamePad's IR LED; "
-        "remotes from the Logitech Harmony IR archive. Raw drive and disc access: libmocha (Maschell). WBFS: libwbfs (Kwiirk, Waninkoko). "
-        "Development console WADs: the dev common key, after RVT2RVL. Title info: after ShowMiiWads (Leathl) and NUSD. "
-        "Write permission colours: GodMode9. Zip: zlib.\n\n"
-        "Full list with licenses: README.",
+        "- WiiIR, SingIR and OptimizeIR (Dakota Thorpe): the IR remote out of the GamePad, through libwiiuir\n"
+        "- WUP Installer GX2 (Dimok, FIX94, Yardape8000): installing titles through MCP\n"
+        "- zlib: zip",
+
 
         "The interface sounds are MoonShell 2.10's (Moonlight, GPL v2 or later), and the clock, calendar, "
         "calculator and alarm follow its own.\n\n"

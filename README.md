@@ -431,6 +431,12 @@ GodModeU stands on a lot of other people's work. Thank you!
 * [MiiKit](https://github.com/cmyksoda/MiiKit) (cmyksoda; public domain, CC0): the Mii database and Mii Parade reader (`source/rfl/rflkit.c`)
 * [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (Project Nayuki, MIT): the Mii QR codes
 * [MII-FLOOD-2](https://github.com/fartbumpoopturd-bit/MII-FLOOD-2): the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
+* [jaames' mii-qr.py](https://gist.github.com/jaames/96ce8daa11b61b758b6b0227b55f9f78): how the 3DS / Wii U Mii QR code is
+  encrypted; [3dbrew](https://www.3dbrew.org/wiki/Mii): their Mii format; [MiiJS](https://www.npmjs.com/package/miijs)
+  (Stewared, ISC): the Wii to 3DS face features
+* [hbl2hbc](https://github.com/FIX94/hbl2hbc) (FIX94): vWii channels started without Nintendo's prompts
+* [RPXLoader](https://github.com/wiiu-env/RPXLoader) (Maschell): Wii U homebrew started from the app, through its module's
+  own `RL_LaunchHomebrew` export
 * [libwbfs](https://github.com/kwiirk/wbfs) (Kwiirk, Waninkoko and others): the WBFS layout, read by GodModeU's own code
 * RVT2RVL and WiiBrew's key list: the development console common key for RVT WADs and discs
 * ShowMiiWads (Leathl) and NUSD: what the title info screen lists for TMDs and tickets
