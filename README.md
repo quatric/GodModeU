@@ -43,9 +43,9 @@ welcome.
 | --- | --- | --- |
 | SD card | `sd:/` | Read / write. |
 | USB drives | `usb1:/` to `usb8:/` | Wii U (WFS) drives, FAT32 / exFAT / NTFS (read / write) and ext2 / ext3 / ext4 (read-only). More partitions take the next free `usbN:`. |
-| Wii U storage (MLC) | `mlc:/` | The internal storage. Protected. |
 | vWii NAND | `nand:/` | Wii Menu, IOS, Wii channels and saves. Protected. Needs Aroma. |
 | Wii U NAND (SLC) | `slc:/` | The Wii U's own system NAND. Protected, with an extra red warning, because a mistake can stop the console booting at all. Needs Aroma. |
+| Wii U storage (MLC) | `mlc:/` | The internal storage. Protected. |
 
 FAT32 has the usual 4 GiB file limit; exFAT and NTFS don't. An NTFS drive that Windows didn't shut down cleanly is left
 alone. Remount drives from the HOME menu after plugging one in or out.
@@ -54,16 +54,16 @@ alone. Remount drives from the HOME menu after plugging one in or out.
 
 | Button | In the file browser |
 | --- | --- |
-| D-Pad Up / Down | Move (hold to scroll) |
-| D-Pad Left / Right | Page up / down |
-| **A** | Open a folder, archive or file. Paste on the green `Paste` row. |
-| **B** | Go up one folder (back to the drive list at the top) |
-| **Y** (Wii Remote **1**) | Mark / unmark the item and move down. Clears the clipboard on the `Paste` row. |
-| **X** (Wii Remote **2**) | Actions menu |
 | **+** | Copy the marked items (or the one under the cursor) |
 | **-** | Cut the marked items |
+| **A** | Open a folder, archive or file. Paste on the green `Paste` row. |
+| **B** | Go up one folder (back to the drive list at the top) |
+| D-Pad Left / Right | Page up / down |
+| D-Pad Up / Down | Move (hold to scroll) |
 | **HOME** | HOME menu (HOME or B closes it) |
 | Touch screen | Tap to point (a tap is **A**) |
+| **X** (Wii Remote **2**) | Actions menu |
+| **Y** (Wii Remote **1**) | Mark / unmark the item and move down. Clears the clipboard on the `Paste` row. |
 | **Y** + **X** together (Wii Remote **1** + **2**) | Screenshot, saved as `GodModeU/screenshots/shot_NNN.png` |
 
 Every controller [libwiiuinput](https://github.com/quatric/libwiiuinput) reads works, with its buttons mapped to the Wii
