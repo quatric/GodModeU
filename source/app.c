@@ -773,7 +773,7 @@ static void show_credits(void)
         "lzop by Markus Oberhumer. WFS: wfslib and wfs-tools (koolkdev).",
 
         "IR remote: WiiIR, SingIR and OptimizeIR (Dakota Thorpe) through libwiiuir, out of the GamePad's IR LED; "
-        "Flipper-IRDB's remotes. Raw drive and disc access: libmocha (Maschell). WBFS: libwbfs (Kwiirk, Waninkoko). "
+        "remotes from the Logitech Harmony IR archive. Raw drive and disc access: libmocha (Maschell). WBFS: libwbfs (Kwiirk, Waninkoko). "
         "Development console WADs: the dev common key, after RVT2RVL. Title info: after ShowMiiWads (Leathl) and NUSD. "
         "Write permission colours: GodMode9. Zip: zlib.\n\n"
         "Full list with licenses: README.",

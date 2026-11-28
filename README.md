@@ -297,8 +297,8 @@ images.
 HOME menu → *IR remote* sends TV, receiver, set-top box (and fan, AC, projector...) codes from the GamePad's IR window, the one
 its TV remote uses.
 
-* **New preset** picks a device from `irdb.dat` (all 8,900 of [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB)'s remotes,
-  by category and manufacturer), then each of its buttons gets a button on
+* **New preset** picks a device from `irdb.dat` (the [Logitech Harmony IR archive](https://github.com/pickysysadmin/logitech-harmony-ir-archive)'s 259,000 remotes,
+  by category and manufacturer, or found by maker and model), then each of its buttons gets a button on
   any controller: the GamePad, a Wii Remote, Nunchuk, Classic, Pro Controller, GameCube adapter port or USB pad, each by its
   own buttons. **Send it now** tries a code.
 * In the remote, a mapped button sends its code and repeats it while held. **HOME + Left / Right** switches preset, and the
@@ -384,7 +384,7 @@ GodModeU stands on a lot of other people's work. Thank you!
 * [libwiiuir](https://github.com/quatric/libwiiuir) (quatric, Apache-2.0): the IR remote, based on
   [WiiIR](https://github.com/dakotath/WiiIR), SingIR and OptimizeIR by Dakota Thorpe (used with permission): its `irdb.xml`
   schema, and OptimizeIR's whole-cycle marks on an absolute timeline for the GamePad's IR LED
-* [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
+* [Logitech Harmony IR archive](https://github.com/pickysysadmin/logitech-harmony-ir-archive) (CC0): the IR remote's devices, packed as `irdb.dat` when a release is built
 * [libwiiuupdate](https://github.com/quatric/libwiiuupdate) (quatric): checks GitHub for a newer release at start and installs it in place
 * [libmocha](https://github.com/wiiu-env/libmocha) (Maschell, LGPL-3.0): reaches USB drives, internal storage and both NANDs through Aroma's Mocha
 * [wii-mobiclip-player](https://github.com/quatric/wii-mobiclip-player) (quatric, MIT): the Mobiclip, THP and Flipnote players
