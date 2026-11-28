@@ -243,6 +243,8 @@ The details of each are below, and in [docs/FORMATS.md](docs/FORMATS.md).
   time it starts. Aroma's plugin menu is there too. Wii U programs start through Aroma's RPXLoader.
 * **Favorite apps:** Actions on a `.wuhb` / `.rpx` (or its folder) on the SD card adds it to HOME > Favorite apps, to start
   from anywhere (by its `meta.xml` name), through RPXLoader.
+* **WUD / WUX install:** with no `game.key` or `<image name>.key` beside the image, GodModeU asks for the disc key (32 hex
+  digits) and saves it next to the image.
 * **Find files** (Actions): every name under the folder that has the text in it, any case, `*` and `?` as wildcards.
 * **Screensaver:** after a few idle minutes (Settings), or now from Settings; the screen comes back as it was.
 

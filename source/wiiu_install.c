@@ -456,6 +456,41 @@ static bool disc_key(const char *path, const char *dir, u8 key[16])
     return vfs_join(p, sizeof(p), APP_DIR, stem) && read_key(p, key);
 }
 
+/* No key file: the key typed in (32 hex digits, as wudump writes game.key), saved as "<image name>.key" next to the
+ * image, or in the app's folder when that one can't be written. */
+static bool ask_key(const char *path, const char *dir)
+{
+    char text[64] = "";
+    if (!ui_text_edit("DISC KEY (32 hex digits, from the disc's game.key)", text, 48)) return false;
+    u8 k[16];
+    int d = 0;
+    for (const char *c = text; *c; c++) {
+        int v = hexv((unsigned char)*c);
+        if (v < 0) { if (isspace((unsigned char)*c) || *c == '-') continue; d = -1; break; }
+        if (d >= 32) { d = -1; break; }
+        if (d & 1) k[d / 2] |= v; else k[d / 2] = (u8)(v << 4);
+        d++;
+    }
+    if (d != 32) {
+        ui_message("DISC KEY", C_YELLOW, "A disc key is 32 hex digits (16 bytes).");
+        return false;
+    }
+    char stem[VFS_NAME_MAX], p[VFS_PATH_MAX];
+    snprintf(stem, sizeof(stem), "%s", vfs_basename(path));
+    char *dot = strrchr(stem, '.');
+    if (dot) *dot = 0;
+    strncat(stem, ".key", sizeof(stem) - strlen(stem) - 1);
+    const char *where[2] = { dir, APP_DIR };
+    for (int i = 0; i < 2; i++) {
+        vfs_file f;
+        if (!vfs_join(p, sizeof(p), where[i], stem) || vfs_is_readonly(p) || !vfs_open_write(&f, p)) continue;
+        bool ok = vfs_write(&f, k, 16) == 16;
+        if (vfs_close_checked(&f) && ok) return true;
+    }
+    ui_message("DISC KEY", C_RED, "Couldn't save the key next to the image or in the app's folder.");
+    return false;
+}
+
 /* ---------------------------------------------------------------- the disc's layout */
 
 #define TMD_CONTENTS 0xB04
@@ -959,6 +994,9 @@ bool wud_menu(const char *path)
     bool mount = false;
     wimg_t im;
     char err[384];
+    char kdir[VFS_PATH_MAX];
+    u8 key[16];
+    if (vfs_parent(path, kdir, sizeof(kdir)) && !disc_key(path, kdir, key)) ask_key(path, kdir);
     ui_busy_begin("Reading the disc image");
     bool ok = img_open(&im, path, err, sizeof(err));
     disc_t *d = ok ? calloc(1, sizeof(disc_t)) : NULL;
