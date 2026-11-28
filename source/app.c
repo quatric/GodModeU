@@ -777,8 +777,8 @@ static void show_credits(void)
         "Write permission colours: GodMode9. Zip: zlib.\n\n"
         "Full list with licenses: README.",
 
-        "MoonShell (Moonlight) inspired us a lot: the interface sounds are MoonShell 2.10's (GPL v2 or "
-        "later), and the clock, calendar, calculator and alarm follow its own.\n\n"
+        "The interface sounds are MoonShell 2.10's (Moonlight, GPL v2 or later), and the clock, calendar, "
+        "calculator and alarm follow its own.\n\n"
         "Thanks for using GodModeU!\n\n"
         "Psst... feeling nostalgic? Right here, or on the drive list, enter + A - Y X - (on a Wii Remote, + A - 1 2 -).",
     };

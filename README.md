@@ -44,7 +44,7 @@ welcome.
 | SD card | `sd:/` | Read / write. |
 | USB drives | `usb1:/` to `usb8:/` | Wii U (WFS) drives, FAT32 / exFAT / NTFS (read / write) and ext2 / ext3 / ext4 (read-only). More partitions take the next free `usbN:`. |
 | Wii U storage (MLC) | `mlc:/` | The internal storage. Protected. |
-| vWii NAND | `nand:/` | System Menu, IOS, Wii channels and saves. Protected. Needs Aroma. |
+| vWii NAND | `nand:/` | Wii Menu, IOS, Wii channels and saves. Protected. Needs Aroma. |
 | Wii U NAND (SLC) | `slc:/` | The Wii U's own system NAND. Protected, with an extra red warning, because a mistake can stop the console booting at all. Needs Aroma. |
 
 FAT32 has the usual 4 GiB file limit; exFAT and NTFS don't. An NTFS drive that Windows didn't shut down cleanly is left
@@ -374,9 +374,6 @@ LGPL-3.0 / GPL-3.0 / Apache-2.0 code it is built with (libmocha, unarr, libwiiui
 
 GodModeU stands on a lot of other people's work. Thank you!
 
-**MoonShell by Moonlight inspired us a lot.** Its 2.10 interface sounds are used here (GPL-2.0 or later, `res/sfx.bin`), and the
-clock, calendar, calculator and alarm follow its own.
-
 **Code included**
 
 * [GodModeWii](https://github.com/quatric/GodModeWii) (quatric & cmyksoda): the code this port is made of, and all its credits
@@ -421,7 +418,7 @@ clock, calendar, calculator and alarm follow its own.
 * [dlc-wad-splitter](https://github.com/DarkMatterCore/dlc-wad-splitter) and [wad2bin](https://github.com/DarkMatterCore/wad2bin) (DarkMatterCore): the split DLC WAD layout, and finding the contents of a partial DLC WAD
 * [MiiKit](https://github.com/cmyksoda/MiiKit) (cmyksoda; public domain, CC0): the Mii database and Mii Parade reader (`source/rfl/rflkit.c`)
 * [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (Project Nayuki, MIT): the Mii QR codes
-* MiiFlood: the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
+* [MII-FLOOD-2](https://github.com/fartbumpoopturd-bit/MII-FLOOD-2): the Mii Parade's layout in `RFL_DB.dat`; mii-qr: the idea of carrying a Mii as a QR code
 * [libwbfs](https://github.com/kwiirk/wbfs) (Kwiirk, Waninkoko and others): the WBFS layout, read by GodModeU's own code
 * RVT2RVL and WiiBrew's key list: the development console common key for RVT WADs and discs
 * ShowMiiWads (Leathl) and NUSD: what the title info screen lists for TMDs and tickets

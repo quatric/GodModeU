@@ -26,7 +26,7 @@ bool databin_is_file(const char *path);
  * permissions kept in the data.bin. The title has to be installed (or the game started once). */
 void databin_import(const char *path);
 
-/* "private/wii/title/RMGE" for a title (its last four bytes as letters, as the System Menu names it). */
+/* "private/wii/title/RMGE" for a title (its last four bytes as letters, as the Wii Menu names it). */
 void databin_dir(u64 tid, char *out, size_t n);
 
 #endif
