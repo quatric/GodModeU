@@ -84,6 +84,7 @@ controllers, keyboards and mice. They can be plugged in at any time.
 * Disk usage
 * Text viewer and hex viewer
 * In-place text and hex editors
+* Zip files and folders from the Actions menu (onto the SD card or USB drive they're on, else the SD card)
 * Hex compare against the copied file (the differing bytes in red), replace a file with the copied one, or inject it at an offset
 * Title info for Wii U and Wii TMDs and tickets, WADs and NAND titles: title ID, version, region, contents and signatures
 * Development console (RVT) WADs and discs open with the dev common key

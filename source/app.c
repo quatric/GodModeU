@@ -20,6 +20,7 @@
 #include "vfs.h"
 #include "fat32fmt.h"
 #include "filetools.h"
+#include "zipwrite.h"
 #include "ops.h"
 #include "waddump.h"
 #include "wadinstall.h"
@@ -999,10 +1000,47 @@ enum {
     A_REPLACE,
     A_INJECT,
     A_TITLEINFO,
+    A_ZIP,
     A_COUNT
 };
 
 static void actions_menu(void);
+
+/* The items as a .zip: next to them when that folder can be written, else at the SD card's top. */
+static void do_zip(char **paths, int n)
+{
+    char dir[VFS_PATH_MAX], base[VFS_NAME_MAX], zp[VFS_PATH_MAX], err[VFS_PATH_MAX + 96], msg[VFS_PATH_MAX + 64];
+    int dev = vfs_dev_of(cwd);
+    bool here = (dev == DEV_SD || (dev >= DEV_USB0 && dev < DEV_USB0 + USB_SLOTS)) && !vfs_is_archive(cwd) &&
+                !vfs_is_readonly(cwd);                  /* never onto the internal storage */
+    if (here) snprintf(dir, sizeof(dir), "%s", cwd);
+    else if (g_devs[DEV_SD].mounted) snprintf(dir, sizeof(dir), "%s", g_devs[DEV_SD].root);
+    else { ui_message("ZIP", C_YELLOW, "This folder can't be written, and there's no SD card to put the zip on."); return; }
+    if (n == 1) {
+        bool is_dir = false;
+        vfs_stat(paths[0], &is_dir, NULL);
+        snprintf(base, sizeof(base), "%s", vfs_basename(paths[0]));
+        char *dot = strrchr(base, '.');
+        if (!is_dir && dot && dot != base) *dot = '\0';
+    } else {
+        const char *b = vfs_basename(cwd);
+        snprintf(base, sizeof(base), "%s", b[0] && !strchr(b, ':') ? b : "Archive");
+    }
+    for (int i = 1; i < 1000; i++) {
+        char name[VFS_NAME_MAX + 16];
+        if (i == 1) snprintf(name, sizeof(name), "%s.zip", base);
+        else snprintf(name, sizeof(name), "%s (%d).zip", base, i);
+        if (!vfs_join(zp, sizeof(zp), dir, name)) return;
+        if (!vfs_exists(zp)) break;
+    }
+    if (zip_create(paths, n, zp, err, sizeof(err))) {
+        snprintf(msg, sizeof(msg), "Saved as %s", zp);
+        ui_message("ZIPPED", C_GREEN, msg);
+        if (here) reload_keep();
+    } else {
+        ui_message("ZIP", C_RED, err);
+    }
+}
 
 static bool open_archive(const vfs_entry *en)
 {
@@ -1168,6 +1206,10 @@ static void actions_menu(void)
         code[n++] = A_TITLEINFO;
     }
 
+    items[n] = nmarks > 1 ? "Zip the marked items" : "Zip this (a .zip next to it)";
+    en[n] = on_entry || nmarks;
+    code[n++] = A_ZIP;
+
     items[n] = "Edit as text";
     en[n] = on_entry && !nmarks && !ro && !card && !ents[e].is_dir;
     code[n++] = A_EDIT_TEXT;
@@ -1277,6 +1319,13 @@ static void actions_menu(void)
         if (!vfs_join(p, sizeof(p), cwd, ents[e].name)) break;
         if (code[r] == A_COMPARE) hexcompare(p, clip[0]);
         else if (code[r] == A_REPLACE ? file_replace(p, clip[0]) : file_inject(p, clip[0])) reload_keep();
+        break;
+    }
+    case A_ZIP: {
+        int t;
+        char **tp = targets(&t);
+        if (t) do_zip(tp, t);
+        free_paths(tp, t);
         break;
     }
     case A_TITLEINFO:
