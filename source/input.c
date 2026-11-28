@@ -120,6 +120,7 @@ static u32 shot_combo(u32 down)
 static u32 detect(u8 DownOrHeld, bool wait)
 {
     ptr_overlay_update();                           /* an arrow taken away by a redraw is back before the next frame */
+    ui_saver_draw();
     if (wait)
         VIDEO_WaitVSync();
     if (!WHBProcIsRunning())
@@ -141,6 +142,8 @@ static u32 detect(u8 DownOrHeld, bool wait)
     ui_hint_update();
     ptr_overlay_update();
     alarm_poll();
+    if (ui_saver_input(INPUT_ButtonsDown() || held_all() || (INPUT_MouseButtonsPressed() & INPUT_MOUSE_LEFT)))
+        return 0;                                   /* shortcut: pointing alone doesn't count as activity */
     if (DownOrHeld != IN_DOWN)
         return held_all();
     u32 down = INPUT_ButtonsDown() | (stick_now & ~stick_before);

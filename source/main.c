@@ -53,6 +53,7 @@ int main(int argc, char **argv)
     bool toggled = risk_startup_poll(2000, began);
     risk_load_forced();
     sfx_load_setting();
+    ui_saver_load();
     colors_load();
     alarm_load();
     update_start();

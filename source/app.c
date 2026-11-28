@@ -1475,6 +1475,8 @@ static bool system_menu(void)
         M_MEMOS,
         M_IR,
         M_SFX,
+        M_SAVER,
+        M_SAVER_NOW,
         M_ALARM,
         M_CALC,
         M_CLOCK,
@@ -1509,7 +1511,7 @@ static bool system_menu(void)
             return false;
         int g = gr == glock ? -1 : gr - (glock >= 0 ? 1 : 0);
 
-        char theme_item[48];
+        char theme_item[48], saver_item[56];
         const char *items[16];
         int code[16];
         int n = 0;
@@ -1546,6 +1548,10 @@ static bool system_menu(void)
             snprintf(theme_item, sizeof(theme_item), "Theme: %s", colors_name(colors_current()));
             ITEM(theme_item, M_THEME);
             ITEM(sfx_enabled() ? "Sound effects: ON (select to turn off)" : "Sound effects: OFF (select to turn on)", M_SFX);
+            if (ui_saver_minutes()) snprintf(saver_item, sizeof(saver_item), "Screensaver: after %d min (select to change)", ui_saver_minutes());
+            else snprintf(saver_item, sizeof(saver_item), "Screensaver: off (select to change)");
+            ITEM(saver_item, M_SAVER);
+            ITEM("Show the screensaver now", M_SAVER_NOW);
             ITEM("About / credits", M_ABOUT);
             break;
         default:
@@ -1618,6 +1624,17 @@ static bool system_menu(void)
         case M_IR:
             irremote_run(false);
             reload_keep_safe();
+            return false;
+        case M_SAVER: {
+            static const int MIN[] = { 5, 10, 30, 0, 1, 2 };
+            int k = 0;
+            while (k < 6 && MIN[k] != ui_saver_minutes()) k++;
+            ui_saver_set_minutes(MIN[(k + 1) % 6]);
+            status(C_GREEN, ui_saver_minutes() ? "Screensaver set (saved on the card)." : "Screensaver off (saved on the card).");
+            return false;
+        }
+        case M_SAVER_NOW:
+            ui_saver_start();
             return false;
         case M_SFX:
             sfx_set_enabled(!sfx_enabled());      /* saved on the card (sd:/apps/GodModeWii/sfx_off) */
